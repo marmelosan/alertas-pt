@@ -102,11 +102,15 @@ export async function geocodificarCodigoPostal(
     throw new Error("LOCATIONIQ_API_KEY em falta — ver .env.local.example");
   }
 
+  // Pesquisa de texto livre (igual à usada em pesquisarLocais, que já
+  // funciona) em vez de campos estruturados (postalcode+country) — o
+  // LocationIQ rejeitou essa combinação com "Invalid Request" mesmo com um
+  // código postal português válido.
   const url = new URL("https://us1.locationiq.com/v1/search");
   url.searchParams.set("key", chave);
   url.searchParams.set("format", "jsonv2");
-  url.searchParams.set("postalcode", codigoPostal);
-  url.searchParams.set("country", "Portugal");
+  url.searchParams.set("q", `${codigoPostal}, Portugal`);
+  url.searchParams.set("countrycodes", "pt");
   url.searchParams.set("addressdetails", "1");
   url.searchParams.set("limit", "1");
 
