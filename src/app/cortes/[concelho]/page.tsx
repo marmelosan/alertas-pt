@@ -6,6 +6,7 @@ import { estaAtivo, estaPorConfirmar, estaProgramado } from "@/lib/estado-alerta
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { BotaoConfirmar } from "@/components/BotaoConfirmar";
 import { Zap, Droplet, ShieldCheck, Users } from "lucide-react";
+import type { Alerta } from "@/types/alerta";
 
 export const revalidate = 300; // 5 min — conteúdo sempre fresco sem rebuild manual
 export const dynamicParams = true; // concelhos novos funcionam mesmo sem estarem no sitemap ainda
@@ -61,6 +62,28 @@ function dataFormatada(iso: string): string {
   });
 }
 
+interface CorteProgramadoAgrupado extends Alerta {
+  /** Quantas ruas/zonas diferentes a E-Redes listou para esta mesma janela — 1 = sem agrupamento. */
+  zonas: number;
+}
+
+/**
+ * A E-Redes lista o mesmo corte uma vez por rua/zona afetada dentro da
+ * mesma freguesia, cada uma com o seu próprio registo — sem agrupar por
+ * freguesia + janela horária, a lista mostrava a mesma manutenção
+ * repetida dezenas de vezes seguidas.
+ */
+function agruparProgramados(alertas: Alerta[]): CorteProgramadoAgrupado[] {
+  const porChave = new Map<string, CorteProgramadoAgrupado>();
+  for (const alerta of alertas) {
+    const chave = `${alerta.freguesia ?? ""}|${alerta.data_inicio ?? ""}|${alerta.data_fim ?? ""}`;
+    const atual = porChave.get(chave);
+    if (atual) atual.zonas++;
+    else porChave.set(chave, { ...alerta, zonas: 1 });
+  }
+  return [...porChave.values()];
+}
+
 export default async function PaginaConcelho({ params }: PageProps) {
   const { concelho: slug } = await params;
   const concelho = await obterConcelhoPorSlug(slug);
@@ -72,9 +95,12 @@ export default async function PaginaConcelho({ params }: PageProps) {
   const luzAtivos = ativos.filter((a) => a.tipo_servico === "luz");
   const aguaAtivos = ativos.filter((a) => a.tipo_servico === "agua");
   const porConfirmar = alertas.filter((a) => estaPorConfirmar(a));
-  const programados = alertas
-    .filter((a) => estaProgramado(a))
-    .sort((a, b) => (a.data_inicio ?? "").localeCompare(b.data_inicio ?? ""));
+  // A E-Redes lista o mesmo corte uma vez por cada rua/zona afetada dentro
+  // da mesma freguesia — sem agrupar, a mesma janela de manutenção
+  // aparecia repetida dezenas de vezes seguidas na lista.
+  const programados = agruparProgramados(alertas.filter((a) => estaProgramado(a))).sort((a, b) =>
+    (a.data_inicio ?? "").localeCompare(b.data_inicio ?? "")
+  );
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -224,6 +250,7 @@ export default async function PaginaConcelho({ params }: PageProps) {
                 </p>
                 <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
                   <ShieldCheck size={13} className="shrink-0" aria-hidden /> Oficial E-REDES
+                  {a.zonas > 1 && ` · ${a.zonas} ruas/zonas afetadas`}
                 </p>
               </li>
             ))}
