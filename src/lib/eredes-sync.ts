@@ -122,10 +122,10 @@ async function prepararAlerta(
     } else {
       // respeita o limite de pedidos/segundo do plano grátis da
       // LocationIQ — só entra aqui para códigos postais NUNCA vistos
-      // antes (ver seedCacheDaBaseDeDados): a partir da primeira vez que
-      // um código postal é geocodificado, fica guardado para sempre na
-      // tabela geocodificacao_cp, por isso esta espera deixa de somar em
-      // quase todas as sincronizações seguintes.
+      // antes: a partir da primeira vez que um código postal é
+      // geocodificado, fica guardado para sempre na tabela
+      // geocodificacao_cp, por isso esta espera deixa de somar em quase
+      // todas as sincronizações seguintes.
       await new Promise((r) => setTimeout(r, 1100));
       const loc = await geocodificarCodigoPostal(codigoPostal);
       if (!loc) {
@@ -228,6 +228,7 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
   const preparados: AlertaOficialPreparado[] = [];
   let processados = 0;
   let ignorados = 0;
+  let inseridosOuAtualizados = 0;
 
   for (const datasetId of datasets) {
     const registos = await obterTodosOsRegistos(datasetId, { limiteTotal: 500 });
@@ -235,19 +236,26 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
 
     for (const registo of registos) {
       const alerta = await prepararAlerta(datasetId, registo, cacheGeocodificacao, supabase);
-      if (alerta) preparados.push(alerta);
-      else ignorados++;
+      if (!alerta) {
+        ignorados++;
+        continue;
+      }
+      preparados.push(alerta);
+
+      // Grava logo, um a um, em vez de só no fim do ciclo inteiro — com
+      // muitos registos para geocodificar, a função pode ser cortada a
+      // meio pelo limite de 60s da Vercel antes de chegar ao fim; sem
+      // isto, todo o trabalho já feito (incluindo o que já estava em
+      // cache) perdia-se sempre, e nunca entrava nada na tabela alertas.
+      const { error: erroUpsert } = await supabase
+        .from("alertas")
+        .upsert(alerta, { onConflict: "external_id" });
+      if (erroUpsert) {
+        console.warn(`[eredes-sync] não consegui gravar o alerta "${alerta.external_id}"`, erroUpsert);
+      } else {
+        inseridosOuAtualizados++;
+      }
     }
-  }
-
-  let inseridosOuAtualizados = 0;
-  if (preparados.length > 0) {
-    const { error, count } = await supabase
-      .from("alertas")
-      .upsert(preparados, { onConflict: "external_id", count: "exact" });
-
-    if (error) throw error;
-    inseridosOuAtualizados = count ?? preparados.length;
   }
 
   const idsAtuais = preparados.map((a) => a.external_id);
