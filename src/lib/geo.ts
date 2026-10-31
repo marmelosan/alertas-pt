@@ -34,8 +34,14 @@ export async function geocodificarInverso(
   const data = await res.json();
   const address = data.address ?? {};
 
+  // Para Portugal, o Nominatim/OSM costuma devolver o DISTRITO no campo
+  // "county" (ex.: "Santarém" para qualquer concelho desse distrito,
+  // Chamusca incluído) — "municipality" é o campo certo para concelho, por
+  // isso tem de vir primeiro; "county" fica como último recurso, não
+  // primeira escolha, porque frequentemente está um nível acima do que
+  // queremos.
   const concelho: string =
-    address.county || address.city || address.town || address.municipality || "Desconhecido";
+    address.municipality || address.town || address.city || address.county || "Desconhecido";
 
   const freguesia: string | null =
     address.suburb || address.city_district || address.village || null;
@@ -130,10 +136,13 @@ export async function geocodificarCodigoPostal(
   if (!primeiro) return null;
 
   const address = primeiro.address ?? {};
+  // Mesma ordem de prioridade de geocodificarInverso, pela mesma razão: o
+  // Nominatim/OSM devolve o DISTRITO em "county" para Portugal, não o
+  // concelho — "municipality" é que corresponde mesmo a concelho.
   return {
     latitude: Number(primeiro.lat),
     longitude: Number(primeiro.lon),
-    concelho: address.county || address.city || address.town || address.municipality || "Desconhecido",
+    concelho: address.municipality || address.town || address.city || address.county || "Desconhecido",
     freguesia: address.suburb || address.city_district || address.village || null,
   };
 }
