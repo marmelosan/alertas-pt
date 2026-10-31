@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
-import { MapPin, Map as MapIcon, MousePointerClick, CheckCircle2, X, Loader2, Zap, Droplet, Share2, Check, WifiOff, ShieldCheck, Users } from "lucide-react";
+import { MapPin, Map as MapIcon, MousePointerClick, CheckCircle2, X, Loader2, Zap, Droplet, Share2, Check, WifiOff, ShieldCheck, Users, Clock } from "lucide-react";
+import Link from "next/link";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Alerta, TipoServico } from "@/types/alerta";
@@ -10,6 +11,7 @@ import {
   confirmarAlerta,
   denunciarAlerta,
   listarAlertasAtivos,
+  listarCortesProgramadosEmBreve,
   obterEstadoServico,
   reportarAlerta,
   type EstadoServico,
@@ -44,7 +46,10 @@ const CORES: Record<TipoServico, string> = {
   agua: "#0ea5e9",
 };
 
-function criarIcone(tipo: TipoServico, origem: Alerta["origem"], porConfirmar: boolean) {
+type EstadoVisual = "ativo" | "por_confirmar" | "programado";
+type AlertaComEstado = Alerta & { estadoVisual: EstadoVisual };
+
+function criarIcone(tipo: TipoServico, origem: Alerta["origem"], estadoVisual: EstadoVisual) {
   const cor = CORES[tipo];
   // origem oficial = quadrado; comunidade = círculo — distinção visual rápida no mapa.
   // A forma sozinha é um sinal fraco a 18px (um quadrado arredondado e um
@@ -56,15 +61,36 @@ function criarIcone(tipo: TipoServico, origem: Alerta["origem"], porConfirmar: b
       ? `width:14px;height:14px;border-radius:3px;`
       : `width:16px;height:16px;border-radius:50%;`;
   const contorno = origem === "oficial" ? "3px solid #1c1917" : "2px solid white";
-  // "por confirmar" (Bloco 6): preenchimento oco + contorno tracejado, em vez
-  // de sólido — sinaliza visualmente que ainda não é uma falha confirmada.
-  const estilo = porConfirmar
-    ? `${forma}background:white;border:2px dashed ${cor};opacity:0.85;`
-    : `${forma}background:${cor};border:${contorno};box-shadow:0 1px 4px rgba(0,0,0,.4);`;
+
+  if (estadoVisual === "por_confirmar") {
+    // "por confirmar" (Bloco 6): preenchimento oco + contorno tracejado, em vez
+    // de sólido — sinaliza visualmente que ainda não é uma falha confirmada.
+    // Só acontece para reportes da comunidade (um corte oficial nunca fica
+    // "por confirmar"), por isso não há conflito visual com "programado" abaixo.
+    return L.divIcon({
+      className: "",
+      html: `<div style="${forma}background:white;border:2px dashed ${cor};opacity:0.85;"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+  }
+
+  if (estadoVisual === "programado") {
+    // Corte oficial já confirmado pela E-Redes mas que ainda não começou —
+    // mesmo quadrado/cor do oficial ativo (para se reconhecer que é da
+    // E-Redes à mesma), só mais esbatido e com contorno tracejado, para não
+    // se confundir com um corte já em curso agora.
+    return L.divIcon({
+      className: "",
+      html: `<div style="${forma}background:${cor};border:2px dashed #1c1917;opacity:0.55;"></div>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+  }
 
   return L.divIcon({
     className: "",
-    html: `<div style="${estilo}"></div>`,
+    html: `<div style="${forma}background:${cor};border:${contorno};box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
@@ -77,6 +103,15 @@ function tempoRelativo(iso: string): string {
   if (minutos < 60) return `há ${minutos} min`;
   const horas = Math.floor(minutos / 60);
   return `há ${horas}h`;
+}
+
+function formatarDataHora(iso: string): string {
+  return new Date(iso).toLocaleString("pt-PT", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** Captura cliques no mapa — só ativo quando estamos em modo "reportar". */
@@ -109,6 +144,7 @@ function VerPortugalTodo({ gatilho }: { gatilho: number }) {
 
 export function MapaAlertas() {
   const [alertas, setAlertas] = useState<Alerta[]>([]);
+  const [programados, setProgramados] = useState<Alerta[]>([]);
   const [filtro, setFiltro] = useState<TipoServico | "todos">("todos");
   const [aCarregar, setACarregar] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -131,10 +167,11 @@ export function MapaAlertas() {
   useEffect(() => {
     let cancelado = false;
 
-    listarAlertasAtivos()
-      .then((dados) => {
+    Promise.all([listarAlertasAtivos(), listarCortesProgramadosEmBreve()])
+      .then(([ativos, programadosEmBreve]) => {
         if (cancelado) return;
-        setAlertas(dados);
+        setAlertas(ativos);
+        setProgramados(programadosEmBreve);
         setErro(null);
       })
       .catch(() => {
@@ -186,6 +223,35 @@ export function MapaAlertas() {
     () => (filtro === "todos" ? alertas : alertas.filter((a) => a.tipo_servico === filtro)),
     [alertas, filtro]
   );
+
+  const programadosVisiveis = useMemo(
+    () => (filtro === "todos" ? programados : programados.filter((a) => a.tipo_servico === filtro)),
+    [programados, filtro]
+  );
+
+  // Os dois juntos, cada um já rotulado com o estado que decide o visual
+  // (ícone + conteúdo do popup) — evita recalcular "por confirmar" em
+  // cada marcador individualmente dentro do JSX.
+  const marcadores = useMemo((): AlertaComEstado[] => {
+    const agora = new Date();
+    const ativosEPorConfirmar = alertasVisiveis.map((a) => ({
+      ...a,
+      estadoVisual: (estaPorConfirmar(a, agora) ? "por_confirmar" : "ativo") as EstadoVisual,
+    }));
+    const programadosMarcados = programadosVisiveis.map((a) => ({
+      ...a,
+      estadoVisual: "programado" as EstadoVisual,
+    }));
+    return [...ativosEPorConfirmar, ...programadosMarcados];
+  }, [alertasVisiveis, programadosVisiveis]);
+
+  // Resumo por concelho para o aviso acima do mapa — não é preciso mostrar
+  // cada corte um a um aqui (isso já existe em detalhe em /cortes), só dar
+  // a indicação de que há algo agendado e onde.
+  const concelhosProgramados = useMemo(() => {
+    const unicos = [...new Set(programados.map((a) => a.concelho))];
+    return unicos.sort((a, b) => a.localeCompare(b, "pt"));
+  }, [programados]);
 
   async function confirmar(id: string) {
     try {
@@ -332,6 +398,21 @@ export function MapaAlertas() {
           </span>
         </div>
       )}
+
+      {concelhosProgramados.length > 0 && (
+        <div className="relative z-[1000] flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 border-b border-stone-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-800 dark:border-stone-800 dark:bg-amber-950 dark:text-amber-200">
+          <Clock size={14} className="shrink-0" aria-hidden />
+          <span>
+            Cortes programados pela E-Redes nos próximos dias em{" "}
+            {concelhosProgramados.slice(0, 6).join(", ")}
+            {concelhosProgramados.length > 6 && ` e mais ${concelhosProgramados.length - 6}`}.
+          </span>
+          <Link href="/cortes" className="font-semibold underline underline-offset-2">
+            Ver detalhes
+          </Link>
+        </div>
+      )}
+
       <div className="relative z-[1000] flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-950">
         <FiltroServico valor={filtro} onChange={setFiltro} />
         <button
@@ -371,6 +452,10 @@ export function MapaAlertas() {
         <span className="flex items-center gap-1">
           <span className="h-2.5 w-2.5 rounded-full border border-dashed border-stone-400 bg-white dark:bg-stone-950" aria-hidden />
           Por confirmar
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm border border-dashed border-stone-500 bg-stone-400 opacity-60" aria-hidden />
+          Programado (E-REDES)
         </span>
         <span className="flex items-center gap-1">
           <Zap size={12} className="text-amber-500" aria-hidden /> Luz
@@ -438,15 +523,20 @@ export function MapaAlertas() {
           <CentrarMapa coord={foco} />
           <VerPortugalTodo gatilho={resetContagem} />
 
-          {alertasVisiveis.map((alerta) => {
-            const porConfirmar = estaPorConfirmar(alerta);
+          {marcadores.map((alerta) => {
+            const porConfirmar = alerta.estadoVisual === "por_confirmar";
+            const programado = alerta.estadoVisual === "programado";
             const servico = alerta.tipo_servico === "luz" ? "Falta de luz" : "Falta de água";
-            const estadoLabel = porConfirmar ? "por confirmar" : "ativo";
+            const estadoLabel = porConfirmar
+              ? "por confirmar"
+              : programado
+                ? `programado para ${alerta.data_inicio ? formatarDataHora(alerta.data_inicio) : "breve"}`
+                : "ativo";
             return (
             <Marker
               key={alerta.id}
               position={[alerta.latitude, alerta.longitude]}
-              icon={criarIcone(alerta.tipo_servico, alerta.origem, porConfirmar)}
+              icon={criarIcone(alerta.tipo_servico, alerta.origem, alerta.estadoVisual)}
               // L.DivIcon não é uma <img> — a opção `alt` do Leaflet não produz
               // nenhum atributo acessível num <div> (fica só uma propriedade JS
               // sem efeito). Define-se aria-label diretamente no elemento, via
@@ -472,6 +562,11 @@ export function MapaAlertas() {
                         Por confirmar
                       </span>
                     )}
+                    {programado && (
+                      <span className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                        <Clock size={10} aria-hidden /> Programado
+                      </span>
+                    )}
                   </strong>
                   <span>
                     {alerta.concelho}
@@ -485,7 +580,9 @@ export function MapaAlertas() {
                       <Users size={13} className="shrink-0" aria-hidden />
                     )}
                     {alerta.origem === "oficial" ? "Oficial E-REDES" : "Comunidade"} ·{" "}
-                    {tempoRelativo(alerta.criado_em)}
+                    {programado && alerta.data_inicio
+                      ? `começa ${formatarDataHora(alerta.data_inicio)}`
+                      : tempoRelativo(alerta.criado_em)}
                     {alerta.origem === "comunidade" && ` · ${alerta.contador_votos} confirmações`}
                   </span>
                   {alerta.origem === "comunidade" && (
