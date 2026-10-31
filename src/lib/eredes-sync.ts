@@ -3,6 +3,9 @@ import { obterTodosOsRegistos, type RegistoOpendatasoft } from "@/lib/opendataso
 import { geocodificarCodigoPostal } from "@/lib/geo";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
 
+type SupabaseServiceClient = ReturnType<typeof getSupabaseServiceClient>;
+type CacheGeocodificacao = Map<string, { lat: number; lon: number; concelho: string; freguesia: string | null }>;
+
 /**
  * Mapeamento confirmado em 2026-10-29 contra a API real do dataset
  * `network-scheduling-work` (cortes programados): zipcode, municipality,
@@ -97,7 +100,8 @@ function paraTimestamptz(valor: unknown): string | null {
 async function prepararAlerta(
   datasetId: string,
   registo: RegistoOpendatasoft,
-  cacheGeocodificacao: Map<string, { lat: number; lon: number; concelho: string; freguesia: string | null }>
+  cacheGeocodificacao: CacheGeocodificacao,
+  supabase: SupabaseServiceClient
 ): Promise<AlertaOficialPreparado | null> {
   const codigoPostal = obterCampo(registo, CAMPOS_CANDIDATOS.codigoPostal);
   const geoPoint = extrairGeoPoint(registo);
@@ -116,13 +120,13 @@ async function prepararAlerta(
     if (cacheHit) {
       ({ lat, lon, concelho, freguesia } = cacheHit);
     } else {
-      // respeita o limite de ~2 pedidos/segundo do plano grátis da
-      // LocationIQ (antes era 1100ms, para a Nominatim, que só permitia
-      // 1/s) — com muitos códigos postais diferentes por sincronizar, a
-      // soma destas esperas facilmente ultrapassa os 60s de limite da
-      // função na Vercel, por isso importa não esperar mais do que o
-      // necessário.
-      await new Promise((r) => setTimeout(r, 550));
+      // respeita o limite de pedidos/segundo do plano grátis da
+      // LocationIQ — só entra aqui para códigos postais NUNCA vistos
+      // antes (ver seedCacheDaBaseDeDados): a partir da primeira vez que
+      // um código postal é geocodificado, fica guardado para sempre na
+      // tabela geocodificacao_cp, por isso esta espera deixa de somar em
+      // quase todas as sincronizações seguintes.
+      await new Promise((r) => setTimeout(r, 1100));
       const loc = await geocodificarCodigoPostal(codigoPostal);
       if (!loc) {
         console.warn(`[eredes-sync] não consegui geocodificar o código postal "${codigoPostal}"`, registo);
@@ -133,6 +137,21 @@ async function prepararAlerta(
       concelho = loc.concelho;
       freguesia = loc.freguesia;
       cacheGeocodificacao.set(codigoPostal, { lat, lon, concelho, freguesia });
+
+      // Grava já, em vez de só no fim — se a função for interrompida por
+      // timeout a meio de uma sincronização grande, o que já foi
+      // geocodificado fica guardado e não se perde nem se repete na
+      // próxima corrida.
+      const { error: erroCache } = await supabase.from("geocodificacao_cp").upsert({
+        codigo_postal: codigoPostal,
+        latitude: lat,
+        longitude: lon,
+        concelho,
+        freguesia,
+      });
+      if (erroCache) {
+        console.warn(`[eredes-sync] não consegui guardar a cache do código postal "${codigoPostal}"`, erroCache);
+      }
     }
   } else {
     console.warn(
@@ -185,10 +204,25 @@ export interface ResultadoSincronizacao {
  */
 export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
   const supabase = getSupabaseServiceClient();
-  const cacheGeocodificacao = new Map<
-    string,
-    { lat: number; lon: number; concelho: string; freguesia: string | null }
-  >();
+  const cacheGeocodificacao: CacheGeocodificacao = new Map();
+
+  // Pré-carrega tudo o que já foi geocodificado em sincronizações
+  // anteriores — é isto que evita voltar a pedir à LocationIQ um código
+  // postal que já conhecemos, em vez de recomeçar do zero sempre.
+  const { data: cacheGuardada, error: erroCacheGuardada } = await supabase
+    .from("geocodificacao_cp")
+    .select("codigo_postal, latitude, longitude, concelho, freguesia");
+  if (erroCacheGuardada) {
+    console.warn("[eredes-sync] não consegui carregar a cache de geocodificação guardada", erroCacheGuardada);
+  }
+  for (const linha of cacheGuardada ?? []) {
+    cacheGeocodificacao.set(linha.codigo_postal, {
+      lat: linha.latitude,
+      lon: linha.longitude,
+      concelho: linha.concelho,
+      freguesia: linha.freguesia,
+    });
+  }
 
   const datasets = ["network-scheduling-work"];
   const preparados: AlertaOficialPreparado[] = [];
@@ -200,7 +234,7 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
     processados += registos.length;
 
     for (const registo of registos) {
-      const alerta = await prepararAlerta(datasetId, registo, cacheGeocodificacao);
+      const alerta = await prepararAlerta(datasetId, registo, cacheGeocodificacao, supabase);
       if (alerta) preparados.push(alerta);
       else ignorados++;
     }
