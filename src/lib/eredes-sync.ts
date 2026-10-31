@@ -4,27 +4,24 @@ import { geocodificarCodigoPostal } from "@/lib/geo";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
 
 /**
- * ⚠️ MAPEAMENTO POR CONFIRMAR
+ * Mapeamento confirmado em 2026-10-29 contra a API real do dataset
+ * `network-scheduling-work` (cortes programados): zipcode, municipality,
+ * parish, startdatetime, enddatetime. Sem geo_point_2d — geocodificamos
+ * sempre pelo código postal.
  *
- * Não consegui aceder à API real da E-Redes a partir deste ambiente (rede
- * bloqueada no sandbox de desenvolvimento), por isso não sei os nomes
- * exatos dos campos dos datasets `outages-per-geography` (avarias ativas)
- * e `network-scheduling-work` (cortes programados).
- *
- * Em vez de inventar nomes e fingir que estão certos, listo aqui vários
- * candidatos plausíveis por campo lógico (nomes comuns em datasets
- * Opendatasoft portugueses). Na primeira sincronização real, cada registo
- * sem correspondência é registado via console.warn com o JSON em bruto —
- * corre uma vez com acesso à rede, vê os logs, e ajusta os arrays de
- * candidatos abaixo para os nomes reais.
+ * O catálogo aberto da E-Redes (70 datasets, listados em 2026-10-29) não
+ * tem nenhum dataset de avarias em tempo real — `outages-per-geography`
+ * não existe e não há equivalente. A E-Redes só publica aqui os cortes
+ * programados; avarias ao vivo ficam só a cargo dos reportes da
+ * comunidade. `sincronizarEredes` sincroniza por isso só este dataset.
  */
 const CAMPOS_CANDIDATOS = {
   id: ["id", "record_id", "objectid", "identificador"],
-  codigoPostal: ["codigo_postal", "cp", "cp7", "postal_code", "postalcode", "zipcode"],
-  dataInicio: ["data_inicio", "data_hora_inicio", "start_date", "start_datetime", "dtinicio"],
-  dataFim: ["data_fim", "data_hora_fim", "end_date", "end_datetime", "dtfim"],
-  concelho: ["concelho", "municipio", "county", "municipality"],
-  freguesia: ["freguesia", "parish"],
+  codigoPostal: ["zipcode", "codigo_postal", "cp", "cp7", "postal_code", "postalcode"],
+  dataInicio: ["startdatetime", "data_inicio", "data_hora_inicio", "start_date", "dtinicio"],
+  dataFim: ["enddatetime", "data_fim", "data_hora_fim", "end_date", "dtfim"],
+  concelho: ["municipality", "concelho", "municipio", "county"],
+  freguesia: ["parish", "freguesia"],
 } as const;
 
 function obterCampo(registo: RegistoOpendatasoft, candidatos: readonly string[]): unknown {
@@ -45,10 +42,28 @@ function extrairGeoPoint(registo: RegistoOpendatasoft): { lat: number; lon: numb
   return null;
 }
 
+/**
+ * A identidade de um registo tem de se basear só nos campos que descrevem
+ * O EVENTO em si (onde + quando), nunca em campos como "updatedatetime"/
+ * "data" que a E-Redes atualiza todos os dias mesmo para o mesmo corte —
+ * usar o registo inteiro como base faria o upsert falhar (cada sync criava
+ * uma linha nova em vez de atualizar a existente).
+ */
 function gerarExternalId(datasetId: string, registo: RegistoOpendatasoft): string {
   const idBruto = obterCampo(registo, CAMPOS_CANDIDATOS.id);
-  const base = idBruto !== undefined ? String(idBruto) : JSON.stringify(registo);
-  return createHash("sha1").update(`${datasetId}:${base}`).digest("hex");
+  if (idBruto !== undefined) {
+    return createHash("sha1").update(`${datasetId}:${idBruto}`).digest("hex");
+  }
+
+  const codigoPostal = obterCampo(registo, CAMPOS_CANDIDATOS.codigoPostal);
+  const dataInicio = obterCampo(registo, CAMPOS_CANDIDATOS.dataInicio);
+  const dataFim = obterCampo(registo, CAMPOS_CANDIDATOS.dataFim);
+  if (codigoPostal !== undefined && dataInicio !== undefined) {
+    const base = `${codigoPostal}|${dataInicio}|${dataFim ?? ""}`;
+    return createHash("sha1").update(`${datasetId}:${base}`).digest("hex");
+  }
+
+  return createHash("sha1").update(`${datasetId}:${JSON.stringify(registo)}`).digest("hex");
 }
 
 interface AlertaOficialPreparado {
@@ -60,6 +75,23 @@ interface AlertaOficialPreparado {
   longitude: number;
   descricao: string | null;
   origem: "oficial";
+  data_inicio: string | null;
+  data_fim: string | null;
+}
+
+/**
+ * Os timestamps da E-Redes vêm sem fuso horário explícito (ex.:
+ * "2026-10-30T07:00:00") — assumimos hora de Lisboa. ⚠️ Por verificar: não
+ * fazemos conversão de DST (verão/inverno); no inverno (WET = UTC+0)
+ * coincide com UTC, no verão (WEST = UTC+1) pode ficar 1h adiantado. Dado
+ * que isto só afeta a hora exata a que um corte aparece como "a começar"
+ * (não o dia), fica assinalado para corrigir mais tarde em vez de
+ * silenciosamente ignorado.
+ */
+function paraTimestamptz(valor: unknown): string | null {
+  if (typeof valor !== "string" || !valor) return null;
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? null : data.toISOString();
 }
 
 async function prepararAlerta(
@@ -105,11 +137,16 @@ async function prepararAlerta(
     return null;
   }
 
-  const dataInicio = obterCampo(registo, CAMPOS_CANDIDATOS.dataInicio);
-  const dataFim = obterCampo(registo, CAMPOS_CANDIDATOS.dataFim);
+  const dataInicio = paraTimestamptz(obterCampo(registo, CAMPOS_CANDIDATOS.dataInicio));
+  const dataFim = paraTimestamptz(obterCampo(registo, CAMPOS_CANDIDATOS.dataFim));
+  if (!dataInicio) {
+    console.warn(`[eredes-sync] registo sem data de início reconhecível, a ignorar:`, registo);
+    return null;
+  }
+
   const descricaoPartes = [
     datasetId === "network-scheduling-work" ? "Corte programado" : "Avaria ativa",
-    dataInicio ? `desde ${dataInicio}` : null,
+    `desde ${dataInicio}`,
     dataFim ? `até ${dataFim}` : null,
   ].filter(Boolean);
 
@@ -120,6 +157,8 @@ async function prepararAlerta(
     freguesia,
     latitude: lat,
     longitude: lon,
+    data_inicio: dataInicio,
+    data_fim: dataFim,
     descricao: descricaoPartes.join(" ") || null,
     origem: "oficial",
   };
@@ -133,12 +172,11 @@ export interface ResultadoSincronizacao {
 }
 
 /**
- * Sincroniza os datasets da E-Redes (avarias ativas + cortes programados)
- * com a tabela `alertas`. Idempotente: usa `external_id` para upsert.
- * Alertas de origem "oficial" que já não aparecem nesta sincronização
- * (ou seja, a E-Redes deixou de os reportar como ativos) são marcados
- * como resolvidos — é a fonte oficial a dizer o estado atual, não um
- * temporizador.
+ * Sincroniza os cortes programados da E-Redes com a tabela `alertas`.
+ * Idempotente: usa `external_id` para upsert. Alertas de origem "oficial"
+ * que já não aparecem nesta sincronização (ou seja, a E-Redes deixou de os
+ * reportar) são marcados como resolvidos — é a fonte oficial a dizer o
+ * estado atual, não um temporizador.
  */
 export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
   const supabase = getSupabaseServiceClient();
@@ -147,7 +185,7 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
     { lat: number; lon: number; concelho: string; freguesia: string | null }
   >();
 
-  const datasets = ["outages-per-geography", "network-scheduling-work"];
+  const datasets = ["network-scheduling-work"];
   const preparados: AlertaOficialPreparado[] = [];
   let processados = 0;
   let ignorados = 0;

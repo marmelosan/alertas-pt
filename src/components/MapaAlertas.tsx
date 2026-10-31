@@ -1,33 +1,65 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
+import { MapPin, Map as MapIcon, MousePointerClick, CheckCircle2, X, Loader2, Zap, Droplet, Share2, Check, WifiOff, ShieldCheck, Users } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Alerta, TipoServico } from "@/types/alerta";
-import { confirmarAlerta, denunciarAlerta, listarAlertasAtivos, reportarAlerta } from "@/lib/alertas";
+import {
+  confirmarAlerta,
+  denunciarAlerta,
+  listarAlertasAtivos,
+  obterEstadoServico,
+  reportarAlerta,
+  type EstadoServico,
+} from "@/lib/alertas";
+import { processarFila } from "@/lib/fila-offline";
+import { estaPorConfirmar } from "@/lib/estado-alerta";
 import { registarEvento } from "@/lib/analytics";
 import { FiltroServico } from "@/components/FiltroServico";
 import { FormularioReporte } from "@/components/FormularioReporte";
+import { BuscaLocal } from "@/components/BuscaLocal";
+import type { ResultadoBusca } from "@/lib/geo";
+import { paraSlug } from "@/lib/slug";
 
-const CENTRO_PORTUGAL: [number, number] = [39.5, -8.0];
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://foiabaixo.vercel.app";
+
+// Caixa que enquadra Portugal continental — usada em vez de um center+zoom
+// fixo, que em ecrãs largos acabava por mostrar mais Espanha que Portugal.
+const LIMITES_PORTUGAL: [[number, number], [number, number]] = [
+  [36.85, -9.6], // sudoeste (perto de Sagres)
+  [42.2, -6.1], // nordeste (perto de Bragança)
+];
+
+// Fora disto não há dados nenhuns — evita que a pessoa se perca a arrastar
+// o mapa para o meio do Atlântico ou de Espanha.
+const LIMITES_MAXIMOS: [[number, number], [number, number]] = [
+  [35.5, -12],
+  [43.5, -5],
+];
 
 const CORES: Record<TipoServico, string> = {
   luz: "#f59e0b",
-  agua: "#3b82f6",
+  agua: "#0ea5e9",
 };
 
-function criarIcone(tipo: TipoServico, origem: Alerta["origem"]) {
+function criarIcone(tipo: TipoServico, origem: Alerta["origem"], porConfirmar: boolean) {
   const cor = CORES[tipo];
   // origem oficial = quadrado; comunidade = círculo — distinção visual rápida no mapa
   const forma =
     origem === "oficial"
       ? `width:14px;height:14px;border-radius:3px;`
       : `width:16px;height:16px;border-radius:50%;`;
+  // "por confirmar" (Bloco 6): preenchimento oco + contorno tracejado, em vez
+  // de sólido — sinaliza visualmente que ainda não é uma falha confirmada.
+  const estilo = porConfirmar
+    ? `${forma}background:white;border:2px dashed ${cor};opacity:0.85;`
+    : `${forma}background:${cor};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.4);`;
 
   return L.divIcon({
     className: "",
-    html: `<div style="${forma}background:${cor};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
+    html: `<div style="${estilo}"></div>`,
     iconSize: [18, 18],
     iconAnchor: [9, 9],
   });
@@ -52,13 +84,44 @@ function CapturarCliques({ ativo, onClique }: { ativo: boolean; onClique: (lat: 
   return null;
 }
 
+/** Centra o mapa num ponto (usado por "Falta aqui agora", clique ou pesquisa). */
+function CentrarMapa({ coord }: { coord: { lat: number; lng: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (coord) map.setView([coord.lat, coord.lng], 15);
+  }, [coord, map]);
+  return null;
+}
+
+/** Volta à vista de Portugal inteiro — incrementa `gatilho` para disparar. */
+function VerPortugalTodo({ gatilho }: { gatilho: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (gatilho > 0) map.fitBounds(LIMITES_PORTUGAL);
+  }, [gatilho, map]);
+  return null;
+}
+
 export function MapaAlertas() {
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [filtro, setFiltro] = useState<TipoServico | "todos">("todos");
   const [aCarregar, setACarregar] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [modoReportar, setModoReportar] = useState(false);
+  const [aviso, setAviso] = useState<{ tipo: "sucesso" | "offline"; texto: string } | null>(null);
+  const [linkCopiadoId, setLinkCopiadoId] = useState<string | null>(null);
   const [pontoPendente, setPontoPendente] = useState<{ lat: number; lng: number } | null>(null);
+  const [foco, setFoco] = useState<{ lat: number; lng: number } | null>(null);
+  const [resetContagem, setResetContagem] = useState(0);
+  const [aLocalizar, setALocalizar] = useState(false);
+  const [estado, setEstado] = useState<EstadoServico | null>(null);
+  const [erroEstado, setErroEstado] = useState(false);
+
+  // o aviso desaparece sozinho ao fim de uns segundos — não obriga a pessoa a fechar à mão
+  useEffect(() => {
+    if (!aviso) return;
+    const temporizador = setTimeout(() => setAviso(null), 6000);
+    return () => clearTimeout(temporizador);
+  }, [aviso]);
 
   useEffect(() => {
     let cancelado = false;
@@ -79,6 +142,39 @@ export function MapaAlertas() {
     return () => {
       cancelado = true;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelado = false;
+    obterEstadoServico()
+      .then((dados) => !cancelado && setEstado(dados))
+      .catch(() => !cancelado && setErroEstado(true));
+    return () => {
+      cancelado = true;
+    };
+  }, [alertas]);
+
+  // Reenvia sozinho o que ficou em fila offline — ao abrir a página e
+  // sempre que a ligação voltar (é precisamente durante um corte real
+  // que a rede do telemóvel também costuma falhar).
+  useEffect(() => {
+    function tentarEnviarFila() {
+      processarFila().then(({ enviados }) => {
+        if (enviados > 0) {
+          setAviso({
+            tipo: "sucesso",
+            texto: `${enviados} ${enviados === 1 ? "reporte enviado" : "reportes enviados"} agora que há ligação.`,
+          });
+          listarAlertasAtivos()
+            .then(setAlertas)
+            .catch(() => {});
+        }
+      });
+    }
+
+    tentarEnviarFila();
+    window.addEventListener("online", tentarEnviarFila);
+    return () => window.removeEventListener("online", tentarEnviarFila);
   }, []);
 
   const alertasVisiveis = useMemo(
@@ -106,6 +202,69 @@ export function MapaAlertas() {
     }
   }
 
+  /** Partilha o alerta (Web Share API no telemóvel, copia o link no desktop). */
+  async function partilhar(alerta: Alerta) {
+    const url = `${SITE_URL}/cortes/${paraSlug(alerta.concelho)}`;
+    const texto =
+      alerta.tipo_servico === "luz"
+        ? `Falta de luz em ${alerta.freguesia ?? alerta.concelho} — confirma no Foi Abaixo`
+        : `Falta de água em ${alerta.freguesia ?? alerta.concelho} — confirma no Foi Abaixo`;
+
+    registarEvento("alerta_partilhado", { tipo_servico: alerta.tipo_servico });
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "Foi Abaixo", text: texto, url });
+      } catch {
+        // pessoa cancelou a partilha — não é um erro
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${texto}: ${url}`);
+      setLinkCopiadoId(alerta.id);
+      setTimeout(() => setLinkCopiadoId(null), 2000);
+    } catch {
+      setErro("Não consegui copiar o link.");
+    }
+  }
+
+  /** Reporte de um toque: usa a localização do telemóvel em vez de ter de clicar no mapa. */
+  function reportarAqui() {
+    setErro(null);
+
+    if (!navigator.geolocation) {
+      setErro("O teu browser não suporta localização — clica no mapa no sítio exato em vez disso.");
+      return;
+    }
+
+    setALocalizar(true);
+    navigator.geolocation.getCurrentPosition(
+      (posicao) => {
+        setALocalizar(false);
+        const coord = { lat: posicao.coords.latitude, lng: posicao.coords.longitude };
+        setPontoPendente(coord);
+        setFoco(coord);
+        registarEvento("localizacao_usada");
+      },
+      (erroGeo) => {
+        setALocalizar(false);
+        setErro(
+          erroGeo.code === erroGeo.PERMISSION_DENIED
+            ? "Não autorizaste a localização. Clica no mapa no sítio exato em vez disso."
+            : "Não consegui obter a tua localização. Clica no mapa no sítio exato em vez disso."
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  }
+
+  function selecionarBusca(local: ResultadoBusca) {
+    setFoco({ lat: local.latitude, lng: local.longitude });
+    registarEvento("pesquisa_local_usada");
+  }
+
   async function enviarReporte(dados: {
     tipo_servico: TipoServico;
     concelho: string;
@@ -113,103 +272,262 @@ export function MapaAlertas() {
     descricao?: string;
   }) {
     if (!pontoPendente) return;
-    const novo = await reportarAlerta({
+    const resultado = await reportarAlerta({
       ...dados,
       latitude: pontoPendente.lat,
       longitude: pontoPendente.lng,
     });
-    setAlertas((prev) => [novo, ...prev]);
     setPontoPendente(null);
-    setModoReportar(false);
-    registarEvento("report_submitted", { tipo_servico: novo.tipo_servico, concelho: novo.concelho });
+
+    if (resultado.tipo === "offline") {
+      setAviso({
+        tipo: "offline",
+        texto: "Sem ligação: o teu reporte fica guardado e é enviado quando houver rede.",
+      });
+      return;
+    }
+
+    setAlertas((prev) => [resultado.alerta, ...prev]);
+    setAviso({ tipo: "sucesso", texto: "Reportado! Obrigado — já aparece no mapa." });
+    registarEvento("report_submitted", {
+      tipo_servico: resultado.alerta.tipo_servico,
+      concelho: resultado.alerta.concelho,
+    });
   }
 
   return (
-    <div className="relative flex flex-1 flex-col">
-      <div className="z-[1000] flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="relative flex min-h-[600px] flex-1 flex-col">
+      {aCarregar ? (
+        <div className="esqueleto flex items-center gap-2 border-b border-stone-200 bg-white px-4 py-2 dark:border-stone-800 dark:bg-stone-950">
+          <span className="h-2 w-2 rounded-full bg-stone-200 dark:bg-stone-800" />
+          <span className="h-3 w-40 rounded bg-stone-200 dark:bg-stone-800" />
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-stone-200 bg-white px-4 py-2 text-sm text-stone-600 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-400">
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${
+              erroEstado && !estado ? "bg-stone-400" : !estado?.ativos ? "bg-green-600" : "bg-amber-500"
+            }`}
+            aria-hidden
+          />
+          <span className="font-medium text-stone-900 dark:text-stone-50">
+            {erroEstado && !estado
+              ? "Não consegui calcular o estado"
+              : !estado?.ativos
+                ? "Tudo normal em Portugal"
+                : `${estado.ativos} ${estado.ativos === 1 ? "falha ativa" : "falhas ativas"}`}
+            {!!estado?.programadosHoje &&
+              ` · ${estado.programadosHoje} ${estado.programadosHoje === 1 ? "programado hoje" : "programados hoje"}`}
+          </span>
+          <span className="text-xs text-stone-500 dark:text-stone-400">
+            ·{" "}
+            {erroEstado || !estado?.ultimaAtualizacaoOficial
+              ? "dados da E-Redes por sincronizar"
+              : `dados da E-Redes atualizados ${tempoRelativo(estado.ultimaAtualizacaoOficial)}`}
+          </span>
+        </div>
+      )}
+      <div className="relative z-[1000] flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-950">
         <FiltroServico valor={filtro} onChange={setFiltro} />
         <button
           type="button"
-          onClick={() => {
-            setModoReportar((v) => !v);
-            setPontoPendente(null);
-          }}
-          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
-            modoReportar
-              ? "bg-red-600 text-white"
-              : "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-          }`}
+          onClick={reportarAqui}
+          disabled={aLocalizar}
+          className="min-h-11 flex items-center gap-1.5 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-900 transition-colors disabled:opacity-60"
         >
-          {modoReportar ? "Cancelar reporte" : "🚨 Reportar falha"}
+          {aLocalizar ? (
+            "A localizar…"
+          ) : (
+            <>
+              <MapPin size={16} aria-hidden /> Falta aqui agora
+            </>
+          )}
         </button>
       </div>
 
-      {modoReportar && !pontoPendente && (
-        <div className="z-[1000] bg-amber-50 px-4 py-2 text-center text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
-          Clica no mapa no sítio exato onde falta o serviço.
+      <div className="relative z-[1200] flex flex-wrap items-center gap-2 border-b border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-950">
+        <BuscaLocal onSelecionar={selecionarBusca} />
+        <button
+          type="button"
+          onClick={() => setResetContagem((c) => c + 1)}
+          className="min-h-11 flex items-center gap-1.5 rounded-full bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-700 dark:bg-stone-800 dark:text-stone-200"
+        >
+          <MapIcon size={16} aria-hidden /> Portugal todo
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-stone-200 bg-white px-4 py-1.5 text-xs text-stone-500 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-400">
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-sm bg-stone-400" aria-hidden /> Oficial E-REDES
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-full bg-stone-400" aria-hidden /> Comunidade
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="h-2.5 w-2.5 rounded-full border border-dashed border-stone-400 bg-white dark:bg-stone-950" aria-hidden />
+          Por confirmar
+        </span>
+        <span className="flex items-center gap-1">
+          <Zap size={12} className="text-amber-500" aria-hidden /> Luz
+        </span>
+        <span className="flex items-center gap-1">
+          <Droplet size={12} className="text-sky-500" aria-hidden /> Água
+        </span>
+      </div>
+
+      {!pontoPendente && (
+        <div className="relative z-[1000] flex items-center justify-center gap-1.5 bg-amber-50 px-4 py-2 text-center text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <MousePointerClick size={15} className="shrink-0" aria-hidden />
+          Clica no mapa no sítio exato onde falta o serviço — ou usa &quot;Falta aqui agora&quot;.
         </div>
       )}
 
       {erro && (
-        <div className="z-[1000] bg-red-50 px-4 py-2 text-center text-sm text-red-700 dark:bg-red-950 dark:text-red-200">
+        <div className="relative z-[1000] bg-red-50 px-4 py-2 text-center text-sm text-red-700 dark:bg-red-950 dark:text-red-200">
           {erro}
         </div>
       )}
 
+      {aviso && (
+        <div
+          className={`relative z-[1000] flex items-center justify-between gap-3 px-4 py-2 text-sm ${
+            aviso.tipo === "offline"
+              ? "bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+              : "bg-green-50 text-green-800 dark:bg-green-950 dark:text-green-200"
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            {aviso.tipo === "offline" ? (
+              <WifiOff size={16} className="shrink-0" aria-hidden />
+            ) : (
+              <CheckCircle2 size={16} className="shrink-0" aria-hidden />
+            )}
+            {aviso.texto}
+          </span>
+          <button type="button" onClick={() => setAviso(null)} className="font-semibold" aria-label="Fechar aviso">
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
       <div className="relative flex-1">
-        <MapContainer center={CENTRO_PORTUGAL} zoom={7} className="absolute inset-0">
+        <MapContainer
+          bounds={LIMITES_PORTUGAL}
+          maxBounds={LIMITES_MAXIMOS}
+          maxBoundsViscosity={0.8}
+          minZoom={7}
+          className="absolute inset-0 mapa-base-neutro"
+        >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
           <CapturarCliques
-            ativo={modoReportar && !pontoPendente}
-            onClique={(lat, lng) => setPontoPendente({ lat, lng })}
+            ativo={!pontoPendente}
+            onClique={(lat, lng) => {
+              setPontoPendente({ lat, lng });
+              setFoco({ lat, lng });
+            }}
           />
+          <CentrarMapa coord={foco} />
+          <VerPortugalTodo gatilho={resetContagem} />
 
-          {alertasVisiveis.map((alerta) => (
+          {alertasVisiveis.map((alerta) => {
+            const porConfirmar = estaPorConfirmar(alerta);
+            const servico = alerta.tipo_servico === "luz" ? "Falta de luz" : "Falta de água";
+            const estadoLabel = porConfirmar ? "por confirmar" : "ativo";
+            return (
             <Marker
               key={alerta.id}
               position={[alerta.latitude, alerta.longitude]}
-              icon={criarIcone(alerta.tipo_servico, alerta.origem)}
+              icon={criarIcone(alerta.tipo_servico, alerta.origem, porConfirmar)}
+              // L.DivIcon não é uma <img> — a opção `alt` do Leaflet não produz
+              // nenhum atributo acessível num <div> (fica só uma propriedade JS
+              // sem efeito). Define-se aria-label diretamente no elemento, via
+              // ref, para o leitor de ecrã ter mesmo um nome no marcador
+              // focável (role="button" vem do próprio Leaflet).
+              ref={(marker) => {
+                marker
+                  ?.getElement()
+                  ?.setAttribute("aria-label", `${servico} em ${alerta.concelho}, ${alerta.freguesia} — ${estadoLabel}`);
+              }}
             >
               <Popup>
                 <div className="flex flex-col gap-1 text-sm">
-                  <strong>
-                    {alerta.tipo_servico === "luz" ? "⚡ Falta de luz" : "💧 Falta de água"}
+                  <strong className="flex items-center gap-1.5">
+                    {alerta.tipo_servico === "luz" ? (
+                      <Zap size={15} className="text-amber-500" aria-hidden />
+                    ) : (
+                      <Droplet size={15} className="text-sky-500" aria-hidden />
+                    )}
+                    {alerta.tipo_servico === "luz" ? "Falta de luz" : "Falta de água"}
+                    {porConfirmar && (
+                      <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-600 dark:bg-stone-800 dark:text-stone-300">
+                        Por confirmar
+                      </span>
+                    )}
                   </strong>
                   <span>
                     {alerta.concelho}
                     {alerta.freguesia ? ` — ${alerta.freguesia}` : ""}
                   </span>
-                  {alerta.descricao && <span className="text-zinc-600">{alerta.descricao}</span>}
-                  <span className="text-xs text-zinc-500">
-                    {tempoRelativo(alerta.criado_em)} ·{" "}
-                    {alerta.origem === "oficial" ? "fonte oficial" : `${alerta.contador_votos} confirmações`}
+                  {alerta.descricao && <span className="text-stone-600">{alerta.descricao}</span>}
+                  <span className="flex items-center gap-1 text-xs text-stone-500">
+                    {alerta.origem === "oficial" ? (
+                      <ShieldCheck size={13} className="shrink-0" aria-hidden />
+                    ) : (
+                      <Users size={13} className="shrink-0" aria-hidden />
+                    )}
+                    {alerta.origem === "oficial" ? "Oficial E-REDES" : "Comunidade"} ·{" "}
+                    {tempoRelativo(alerta.criado_em)}
+                    {alerta.origem === "comunidade" && ` · ${alerta.contador_votos} confirmações`}
                   </span>
                   {alerta.origem === "comunidade" && (
-                    <div className="mt-1 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => confirmar(alerta.id)}
-                        className="rounded-lg bg-zinc-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-zinc-900"
-                      >
-                        Eu também estou sem isto
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => denunciar(alerta.id)}
-                        className="text-xs text-zinc-400 underline hover:text-zinc-600 dark:hover:text-zinc-300"
-                      >
-                        Não é verdade
-                      </button>
+                    <div className="mt-1 flex flex-col gap-1.5">
+                      {porConfirmar && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400">
+                          Precisa de mais 1 confirmação independente para contar como falha ativa.
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => confirmar(alerta.id)}
+                          className="rounded-lg bg-stone-900 px-3 py-1.5 text-xs font-semibold text-white dark:bg-white dark:text-stone-900"
+                        >
+                          Eu também estou sem isto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => denunciar(alerta.id)}
+                          className="text-xs text-stone-500 underline hover:text-stone-600"
+                        >
+                          Não é verdade
+                        </button>
+                      </div>
                     </div>
                   )}
+                  <button
+                    type="button"
+                    onClick={() => partilhar(alerta)}
+                    className="mt-1 flex items-center gap-1 self-start text-xs text-stone-500 underline hover:text-stone-700 dark:hover:text-stone-300"
+                  >
+                    {linkCopiadoId === alerta.id ? (
+                      <>
+                        <Check size={13} /> Link copiado!
+                      </>
+                    ) : (
+                      <>
+                        <Share2 size={13} /> Partilhar
+                      </>
+                    )}
+                  </button>
                 </div>
               </Popup>
             </Marker>
-          ))}
+            );
+          })}
         </MapContainer>
 
         {pontoPendente && (
@@ -224,7 +542,8 @@ export function MapaAlertas() {
         )}
 
         {aCarregar && (
-          <div className="absolute top-3 left-1/2 z-[1000] -translate-x-1/2 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-zinc-600 shadow dark:bg-zinc-900/90 dark:text-zinc-300">
+          <div className="absolute top-3 left-1/2 z-[1000] flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-white/90 px-3 py-1 text-xs font-medium text-stone-600 shadow dark:bg-stone-900/90 dark:text-stone-300">
+            <Loader2 size={13} className="animate-spin" aria-hidden />
             A carregar alertas…
           </div>
         )}

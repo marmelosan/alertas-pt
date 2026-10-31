@@ -67,22 +67,22 @@ export function ConsentBanner() {
   if (!visivel) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[2000] flex flex-col items-center justify-between gap-3 border-t border-zinc-200 bg-white p-4 shadow-lg sm:flex-row dark:border-zinc-800 dark:bg-zinc-950">
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+    <div className="fixed inset-x-0 bottom-0 z-[2000] flex flex-col items-center justify-between gap-3 border-t border-stone-200 bg-white p-4 shadow-lg sm:flex-row dark:border-stone-800 dark:bg-stone-950">
+      <p className="text-sm text-stone-600 dark:text-stone-400">
         Usamos analytics para perceber a utilização do site. Nada fica guardado até escolheres.
       </p>
       <div className="flex gap-2">
         <button
           type="button"
           onClick={rejeitar}
-          className="rounded-full bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+          className="min-h-11 rounded-full bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-700 dark:bg-stone-800 dark:text-stone-200"
         >
           Rejeitar
         </button>
         <button
           type="button"
           onClick={aceitar}
-          className="rounded-full bg-zinc-900 px-4 py-2 text-sm font-semibold text-white dark:bg-white dark:text-zinc-900"
+          className="min-h-11 rounded-full bg-stone-900 px-4 py-2 text-sm font-semibold text-white dark:bg-white dark:text-stone-900"
         >
           Aceitar
         </button>

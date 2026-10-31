@@ -1,5 +1,6 @@
 "use client";
 
+import { Map as MapIcon, Zap, Droplet, type LucideIcon } from "lucide-react";
 import type { TipoServico } from "@/types/alerta";
 
 interface FiltroServicoProps {
@@ -7,10 +8,10 @@ interface FiltroServicoProps {
   onChange: (valor: TipoServico | "todos") => void;
 }
 
-const OPCOES: { valor: TipoServico | "todos"; label: string; emoji: string }[] = [
-  { valor: "todos", label: "Tudo", emoji: "🗺️" },
-  { valor: "luz", label: "Luz", emoji: "⚡" },
-  { valor: "agua", label: "Água", emoji: "💧" },
+const OPCOES: { valor: TipoServico | "todos"; label: string; Icone: LucideIcon }[] = [
+  { valor: "todos", label: "Tudo", Icone: MapIcon },
+  { valor: "luz", label: "Luz", Icone: Zap },
+  { valor: "agua", label: "Água", Icone: Droplet },
 ];
 
 export function FiltroServico({ valor, onChange }: FiltroServicoProps) {
@@ -21,13 +22,15 @@ export function FiltroServico({ valor, onChange }: FiltroServicoProps) {
           key={opcao.valor}
           type="button"
           onClick={() => onChange(opcao.valor)}
-          className={`rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+          aria-pressed={valor === opcao.valor}
+          className={`min-h-11 flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
             valor === opcao.valor
-              ? "bg-zinc-900 text-white dark:bg-white dark:text-zinc-900"
-              : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              ? "bg-stone-900 text-white dark:bg-white dark:text-stone-900"
+              : "bg-stone-100 text-stone-700 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
           }`}
         >
-          {opcao.emoji} {opcao.label}
+          <opcao.Icone size={16} aria-hidden />
+          {opcao.label}
         </button>
       ))}
     </div>

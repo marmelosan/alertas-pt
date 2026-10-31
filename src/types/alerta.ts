@@ -18,6 +18,9 @@ export interface Alerta {
   client_id: string | null;
   criado_em: string;
   atualizado_em: string;
+  /** Só para origem="oficial" — início/fim do corte programado (E-Redes). Nulo para comunidade. */
+  data_inicio: string | null;
+  data_fim: string | null;
 }
 
 export type NovoAlerta = Pick<

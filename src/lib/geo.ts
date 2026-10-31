@@ -43,6 +43,38 @@ export async function geocodificarInverso(
   return { concelho, freguesia };
 }
 
+export interface ResultadoBusca {
+  nome: string;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Pesquisa de texto livre (nome de concelho/freguesia/vila) via Nominatim,
+ * restrita a Portugal. Usada pela caixa de busca do mapa — a forma mais
+ * rápida de alguém encontrar a sua zona sem ter de andar a fazer zoom à mão.
+ */
+export async function pesquisarLocais(termo: string): Promise<ResultadoBusca[]> {
+  if (termo.trim().length < 2) return [];
+
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("q", termo);
+  url.searchParams.set("countrycodes", "pt");
+  url.searchParams.set("limit", "5");
+  url.searchParams.set("addressdetails", "0");
+
+  const res = await fetch(url, { headers: { "Accept-Language": "pt-PT" } });
+  if (!res.ok) throw new Error(`Nominatim devolveu ${res.status}`);
+
+  const resultados = await res.json();
+  return (resultados as Array<{ display_name: string; lat: string; lon: string }>).map((r) => ({
+    nome: r.display_name,
+    latitude: Number(r.lat),
+    longitude: Number(r.lon),
+  }));
+}
+
 export interface LocalizacaoPorCodigoPostal extends LocalizacaoAproximada {
   latitude: number;
   longitude: number;

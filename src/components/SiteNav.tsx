@@ -1,0 +1,30 @@
+import Link from "next/link";
+import { Logo } from "@/components/Logo";
+
+const ITENS = [
+  { href: "/", label: "Mapa" },
+  { href: "/cortes", label: "Concelhos" },
+  { href: "/guias", label: "Guias" },
+  { href: "/faq", label: "FAQ" },
+];
+
+export function SiteNav() {
+  return (
+    <div className="flex items-center justify-between border-b border-stone-200 px-4 py-3 print:hidden dark:border-stone-800">
+      <Link href="/" className="text-lg font-bold text-stone-900 dark:text-stone-50">
+        <Logo size={20} />
+      </Link>
+      <nav className="flex gap-1">
+        {ITENS.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="min-h-11 flex items-center rounded-full px-3 text-sm font-semibold text-stone-600 hover:bg-stone-100 dark:text-stone-300 dark:hover:bg-stone-800"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+    </div>
+  );
+}

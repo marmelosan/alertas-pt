@@ -8,7 +8,7 @@ const MapaAlertas = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">
+      <div className="flex flex-1 items-center justify-center text-sm text-stone-500">
         A carregar o mapa…
       </div>
     ),
