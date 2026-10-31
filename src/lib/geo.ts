@@ -108,7 +108,7 @@ export async function geocodificarCodigoPostal(
   // código postal português válido.
   const url = new URL("https://us1.locationiq.com/v1/search");
   url.searchParams.set("key", chave);
-  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("format", "json");
   url.searchParams.set("q", `${codigoPostal}, Portugal`);
   url.searchParams.set("countrycodes", "pt");
   url.searchParams.set("addressdetails", "1");
