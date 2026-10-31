@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import { MapPin, Map as MapIcon, MousePointerClick, CheckCircle2, X, Loader2, Zap, Droplet, Share2, Check, WifiOff, ShieldCheck, Users, Clock } from "lucide-react";
 import Link from "next/link";
-import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { Alerta, TipoServico } from "@/types/alerta";
 import {
@@ -18,6 +17,8 @@ import {
 } from "@/lib/alertas";
 import { processarFila } from "@/lib/fila-offline";
 import { estaPorConfirmar } from "@/lib/estado-alerta";
+import { criarIconeAlerta, type EstadoVisualMarcador } from "@/lib/icones-mapa";
+import { tempoRelativo, formatarDataHora } from "@/lib/tempo";
 import { registarEvento } from "@/lib/analytics";
 import { FiltroServico } from "@/components/FiltroServico";
 import { FormularioReporte } from "@/components/FormularioReporte";
@@ -41,78 +42,8 @@ const LIMITES_MAXIMOS: [[number, number], [number, number]] = [
   [43.5, -5],
 ];
 
-const CORES: Record<TipoServico, string> = {
-  luz: "#f59e0b",
-  agua: "#0ea5e9",
-};
-
-type EstadoVisual = "ativo" | "por_confirmar" | "programado";
+type EstadoVisual = EstadoVisualMarcador;
 type AlertaComEstado = Alerta & { estadoVisual: EstadoVisual };
-
-function criarIcone(tipo: TipoServico, origem: Alerta["origem"], estadoVisual: EstadoVisual) {
-  const cor = CORES[tipo];
-  // origem oficial = quadrado; comunidade = círculo — distinção visual rápida no mapa.
-  // A forma sozinha é um sinal fraco a 18px (um quadrado arredondado e um
-  // círculo ficam parecidos de relance); o contorno reforça-a com um
-  // segundo sinal independente: oficial tem contorno escuro grosso,
-  // comunidade mantém o branco fino de sempre.
-  const forma =
-    origem === "oficial"
-      ? `width:14px;height:14px;border-radius:3px;`
-      : `width:16px;height:16px;border-radius:50%;`;
-  const contorno = origem === "oficial" ? "3px solid #1c1917" : "2px solid white";
-
-  if (estadoVisual === "por_confirmar") {
-    // "por confirmar" (Bloco 6): preenchimento oco + contorno tracejado, em vez
-    // de sólido — sinaliza visualmente que ainda não é uma falha confirmada.
-    // Só acontece para reportes da comunidade (um corte oficial nunca fica
-    // "por confirmar"), por isso não há conflito visual com "programado" abaixo.
-    return L.divIcon({
-      className: "",
-      html: `<div style="${forma}background:white;border:2px dashed ${cor};opacity:0.85;"></div>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    });
-  }
-
-  if (estadoVisual === "programado") {
-    // Corte oficial já confirmado pela E-Redes mas que ainda não começou —
-    // mesmo quadrado/cor do oficial ativo (para se reconhecer que é da
-    // E-Redes à mesma), só mais esbatido e com contorno tracejado, para não
-    // se confundir com um corte já em curso agora.
-    return L.divIcon({
-      className: "",
-      html: `<div style="${forma}background:${cor};border:2px dashed #1c1917;opacity:0.55;"></div>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    });
-  }
-
-  return L.divIcon({
-    className: "",
-    html: `<div style="${forma}background:${cor};border:${contorno};box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-  });
-}
-
-function tempoRelativo(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const minutos = Math.floor(diffMs / 60000);
-  if (minutos < 1) return "agora mesmo";
-  if (minutos < 60) return `há ${minutos} min`;
-  const horas = Math.floor(minutos / 60);
-  return `há ${horas}h`;
-}
-
-function formatarDataHora(iso: string): string {
-  return new Date(iso).toLocaleString("pt-PT", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 /** Captura cliques no mapa — só ativo quando estamos em modo "reportar". */
 function CapturarCliques({ ativo, onClique }: { ativo: boolean; onClique: (lat: number, lng: number) => void }) {
@@ -536,7 +467,7 @@ export function MapaAlertas() {
             <Marker
               key={alerta.id}
               position={[alerta.latitude, alerta.longitude]}
-              icon={criarIcone(alerta.tipo_servico, alerta.origem, alerta.estadoVisual)}
+              icon={criarIconeAlerta(alerta.tipo_servico, alerta.origem, alerta.estadoVisual)}
               // L.DivIcon não é uma <img> — a opção `alt` do Leaflet não produz
               // nenhum atributo acessível num <div> (fica só uma propriedade JS
               // sem efeito). Define-se aria-label diretamente no elemento, via
