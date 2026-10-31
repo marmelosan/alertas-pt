@@ -73,6 +73,26 @@ function VerPortugalTodo({ gatilho }: { gatilho: number }) {
   return null;
 }
 
+/**
+ * O contentor do mapa muda de altura sempre que uma faixa acima dele
+ * aparece/desaparece (ex.: a instrução "Clica no mapa..." some quando se
+ * está a reportar, e volta ao cancelar). O Leaflet guarda o tamanho do
+ * mapa em cache e não deteta essas mudanças de CSS sozinho — fica com os
+ * tiles desalinhados ou em branco até algo chamar `invalidateSize()`.
+ * Um ResizeObserver no próprio contentor trata disto para qualquer
+ * mudança de layout, não só o caso de reportar/cancelar.
+ */
+function AjustaTamanho() {
+  const map = useMap();
+  useEffect(() => {
+    const contentor = map.getContainer();
+    const observador = new ResizeObserver(() => map.invalidateSize());
+    observador.observe(contentor);
+    return () => observador.disconnect();
+  }, [map]);
+  return null;
+}
+
 export function MapaAlertas() {
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [programados, setProgramados] = useState<Alerta[]>([]);
@@ -453,6 +473,7 @@ export function MapaAlertas() {
           />
           <CentrarMapa coord={foco} />
           <VerPortugalTodo gatilho={resetContagem} />
+          <AjustaTamanho />
 
           {marcadores.map((alerta) => {
             const porConfirmar = alerta.estadoVisual === "por_confirmar";

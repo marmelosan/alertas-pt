@@ -36,10 +36,16 @@ const COR_SEM_ALERTAS_LINHA = "#d4d4d8";
 // para escrever o nome de cada um sem o mapa ficar ilegível de texto. Em
 // zonas densas (área metropolitana de Lisboa, por exemplo) muitos concelhos
 // pequenos ficam lado a lado — por isso o limiar é alto, só liga os rótulos
-// permanentes de TODOS quando já restam mesmo poucos à vista. Os concelhos
-// com alertas são a exceção: o rótulo deles fica sempre ligado, zoom
-// nenhum, porque é precisamente o que a pessoa precisa de ver primeiro.
+// permanentes de TODOS quando já restam mesmo poucos à vista.
 const ZOOM_MOSTRA_ROTULOS = 11;
+
+// Limiar mais baixo, só para concelhos COM alertas — com a janela de 30
+// dias pode haver uma dezena ou mais ao mesmo tempo espalhados pelo país,
+// e se o rótulo deles ficasse ligado desde o zoom inicial (Portugal
+// inteiro), as caixas de texto sobrepunham-se todas e ainda tapavam os
+// pins por baixo. A partir deste zoom já se vê uma área mais pequena, por
+// isso os rótulos cabem sem se amontoarem.
+const ZOOM_MOSTRA_ROTULOS_ALERTAS = 9;
 
 interface ConcelhoProperties {
   con_name: string;
@@ -49,6 +55,11 @@ interface ConcelhoProperties {
 function SeguidorDeZoom({ onZoom }: { onZoom: (zoom: number) => void }) {
   useMapEvents({ zoomend: (e) => onZoom(e.target.getZoom()) });
   return null;
+}
+
+function rotuloPermanente(temAlerta: boolean, zoom: number): boolean {
+  if (zoom >= ZOOM_MOSTRA_ROTULOS) return true;
+  return temAlerta && zoom >= ZOOM_MOSTRA_ROTULOS_ALERTAS;
 }
 
 export function MapaConcelhos({
@@ -72,14 +83,12 @@ export function MapaConcelhos({
       .catch(() => setGeojson(null));
   }, []);
 
-  // Alterna os rótulos permanentes quando o zoom cruza o limiar — sem isto
-  // recriar a camada toda (308 polígonos) só para mudar o texto. Um
-  // concelho com alerta fica sempre com o rótulo ligado, independente do
-  // zoom (ver ZOOM_MOSTRA_ROTULOS acima).
+  // Alterna os rótulos permanentes quando o zoom cruza um dos dois
+  // limiares — sem isto recriar a camada toda (308 polígonos) só para
+  // mudar o texto.
   useEffect(() => {
-    const mostrarTodos = zoom >= ZOOM_MOSTRA_ROTULOS;
     for (const { layer, nome, temAlerta } of camadasRef.current) {
-      const permanente = temAlerta || mostrarTodos;
+      const permanente = rotuloPermanente(temAlerta, zoom);
       layer.unbindTooltip();
       layer.bindTooltip(nome, { sticky: !permanente, permanent: permanente, direction: "center", className: "rotulo-concelho" });
     }
@@ -111,7 +120,8 @@ export function MapaConcelhos({
     const nome = feature.properties.con_name;
     const slug = paraSlug(nome);
     const temAlerta = oficiaisSlugs.has(slug) || comunidadeSlugs.has(slug);
-    layer.bindTooltip(nome, { sticky: !temAlerta, permanent: temAlerta, direction: "center", className: "rotulo-concelho" });
+    const permanente = rotuloPermanente(temAlerta, zoom);
+    layer.bindTooltip(nome, { sticky: !permanente, permanent: permanente, direction: "center", className: "rotulo-concelho" });
     camadasRef.current.push({ layer, nome, temAlerta });
     layer.on("click", () => router.push(`/cortes/${slug}`));
     layer.on("mouseover", () => (layer as Path).setStyle({ weight: 2.5 }));
