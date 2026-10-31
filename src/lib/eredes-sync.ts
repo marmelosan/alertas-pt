@@ -122,10 +122,10 @@ async function prepararAlerta(
     } else {
       // respeita o limite de pedidos/segundo do plano grátis da
       // LocationIQ — só entra aqui para códigos postais NUNCA vistos
-      // antes: a partir da primeira vez que um código postal é
-      // geocodificado, fica guardado para sempre na tabela
-      // geocodificacao_cp, por isso esta espera deixa de somar em quase
-      // todas as sincronizações seguintes.
+      // antes (ver seedCacheDaBaseDeDados): a partir da primeira vez que
+      // um código postal é geocodificado, fica guardado para sempre na
+      // tabela geocodificacao_cp, por isso esta espera deixa de somar em
+      // quase todas as sincronizações seguintes.
       await new Promise((r) => setTimeout(r, 1100));
       const loc = await geocodificarCodigoPostal(codigoPostal);
       if (!loc) {

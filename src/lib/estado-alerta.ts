@@ -59,13 +59,15 @@ export function estaVisivelAgora(alerta: Alerta, agora: Date = new Date()): bool
   return estado === "ativo" || estado === "por_confirmar";
 }
 
+/**
+ * Sem limite de dias de propósito — já houve duas voltas a isto (janela de
+ * 7, depois 30) e continuava a cortar cortes genuinamente confirmados pela
+ * E-Redes com mais de um mês de antecedência. Se já está na BD como
+ * "programado", é porque a E-Redes já o confirmou; não há razão nenhuma
+ * para o esconder nas vistas gerais (mapa, resumo da home, lista de
+ * concelhos) só por estar a 20 ou 25 dias, principalmente quando a página
+ * do próprio concelho sempre o mostrou sem limite nenhum.
+ */
 export function estaProgramado(alerta: Alerta, agora: Date = new Date()): boolean {
   return calcularEstado(alerta, agora) === "programado";
-}
-
-/** Programado dentro dos próximos `dias` dias (por omissão 7, como pedido no briefing). */
-export function estaProgramadoEmBreve(alerta: Alerta, agora: Date = new Date(), dias = 7): boolean {
-  if (!estaProgramado(alerta, agora)) return false;
-  const limite = new Date(agora.getTime() + dias * 24 * 36e5);
-  return new Date(alerta.data_inicio as string) <= limite;
 }

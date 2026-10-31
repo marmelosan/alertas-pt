@@ -1,7 +1,7 @@
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { obterClientId } from "@/lib/client-id";
 import { adicionarAFila } from "@/lib/fila-offline";
-import { calcularEstado, estaProgramadoEmBreve, estaVisivelAgora } from "@/lib/estado-alerta";
+import { calcularEstado, estaProgramado, estaVisivelAgora } from "@/lib/estado-alerta";
 import type { Alerta, NovoAlerta } from "@/types/alerta";
 
 export type ResultadoReporte = { tipo: "enviado"; alerta: Alerta } | { tipo: "offline" };
@@ -29,14 +29,15 @@ export async function listarAlertasAtivos(): Promise<Alerta[]> {
 }
 
 /**
- * Cortes oficiais da E-Redes já confirmados mas ainda não começados,
- * dentro dos próximos 7 dias (`estaProgramadoEmBreve`). Pedido à parte de
- * `listarAlertasAtivos()` de propósito: o painel de "reportes recentes"
- * também usa essa função e ordena por `criado_em` mostrando "há Xh", o
- * que não faz sentido nenhum para um corte que ainda nem começou — só
- * quem sabe distinguir visualmente os dois estados (o mapa) pede isto.
+ * Cortes oficiais da E-Redes já confirmados mas ainda não começados — sem
+ * limite de dias, qualquer coisa que a E-Redes já tenha agendado conta.
+ * Pedido à parte de `listarAlertasAtivos()` de propósito: o painel de
+ * "reportes recentes" também usa essa função e ordena por `criado_em`
+ * mostrando "há Xh", o que não faz sentido nenhum para um corte que ainda
+ * nem começou — só quem sabe distinguir visualmente os dois estados (o
+ * mapa) pede isto.
  */
-export async function listarCortesProgramadosEmBreve(): Promise<Alerta[]> {
+export async function listarCortesProgramados(): Promise<Alerta[]> {
   const { data, error } = await supabaseBrowser
     .from("alertas")
     .select("*")
@@ -46,7 +47,7 @@ export async function listarCortesProgramadosEmBreve(): Promise<Alerta[]> {
 
   if (error) throw error;
   const agora = new Date();
-  return (data ?? []).filter((alerta) => estaProgramadoEmBreve(alerta, agora));
+  return (data ?? []).filter((alerta) => estaProgramado(alerta, agora));
 }
 
 export interface EstadoServico {
@@ -77,12 +78,7 @@ export async function obterEstadoServico(): Promise<EstadoServico> {
   for (const alerta of data ?? []) {
     const estado = calcularEstado(alerta, agora);
     if (estado === "ativo") ativos++;
-    if (
-      estado === "programado" &&
-      estaProgramadoEmBreve(alerta, agora) &&
-      alerta.data_inicio &&
-      new Date(alerta.data_inicio) <= fimDoDia
-    ) {
+    if (estado === "programado" && alerta.data_inicio && new Date(alerta.data_inicio) <= fimDoDia) {
       programadosHoje++;
     }
     if (alerta.origem === "oficial" && (!ultimaAtualizacaoOficial || alerta.atualizado_em > ultimaAtualizacaoOficial)) {

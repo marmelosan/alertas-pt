@@ -116,7 +116,7 @@ export default async function PaginaConcelhos() {
       {concelhosProgramados.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
-            Programados nos próximos 30 dias
+            Programados
           </h2>
           <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {concelhosProgramados.map((c) => (

@@ -10,7 +10,7 @@ import {
   confirmarAlerta,
   denunciarAlerta,
   listarAlertasAtivos,
-  listarCortesProgramadosEmBreve,
+  listarCortesProgramados,
   obterEstadoServico,
   reportarAlerta,
   type EstadoServico,
@@ -118,7 +118,7 @@ export function MapaAlertas() {
   useEffect(() => {
     let cancelado = false;
 
-    Promise.all([listarAlertasAtivos(), listarCortesProgramadosEmBreve()])
+    Promise.all([listarAlertasAtivos(), listarCortesProgramados()])
       .then(([ativos, programadosEmBreve]) => {
         if (cancelado) return;
         setAlertas(ativos);

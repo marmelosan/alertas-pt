@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Zap, Droplet, ShieldCheck, Users } from "lucide-react";
-import { listarAlertasAtivos } from "@/lib/alertas";
+import { Zap, Droplet, ShieldCheck, Users, Clock } from "lucide-react";
+import { listarAlertasAtivos, listarCortesProgramados } from "@/lib/alertas";
 import { estaPorConfirmar } from "@/lib/estado-alerta";
 import { paraSlug } from "@/lib/slug";
 import type { Alerta } from "@/types/alerta";
@@ -19,11 +19,15 @@ function tempoRelativo(iso: string): string {
 
 export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?: boolean }) {
   const [alertas, setAlertas] = useState<Alerta[] | null>(null);
+  const [totalProgramados, setTotalProgramados] = useState(0);
 
   useEffect(() => {
     listarAlertasAtivos()
       .then((dados) => setAlertas(dados.slice(0, 8)))
       .catch(() => setAlertas([]));
+    listarCortesProgramados()
+      .then((dados) => setTotalProgramados(dados.length))
+      .catch(() => {});
   }, []);
 
   return (
@@ -45,9 +49,22 @@ export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?
         </ul>
       )}
       {alertas?.length === 0 && (
-        <p className="text-sm text-stone-500 dark:text-stone-400">
-          Sem reportes ativos agora — boas notícias.
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sm text-stone-500 dark:text-stone-400">
+            {totalProgramados > 0 ? "Sem falhas em curso agora." : "Sem falhas em curso agora — boas notícias."}
+          </p>
+          {totalProgramados > 0 && (
+            <p className="flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400">
+              <Clock size={13} className="shrink-0" aria-hidden />
+              Mas há {totalProgramados} {totalProgramados === 1 ? "corte programado" : "cortes programados"} pela
+              E-Redes —{" "}
+              <Link href="/cortes" className="font-semibold underline underline-offset-2">
+                ver no mapa
+              </Link>
+              .
+            </p>
+          )}
+        </div>
       )}
       <ul className="flex flex-col gap-2">
         {alertas?.map((a) => {

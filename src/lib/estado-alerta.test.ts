@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularEstado, estaAtivo, estaPorConfirmar, estaProgramado, estaProgramadoEmBreve, estaVisivelAgora } from "./estado-alerta";
+import { calcularEstado, estaAtivo, estaPorConfirmar, estaProgramado, estaVisivelAgora } from "./estado-alerta";
 import type { Alerta } from "@/types/alerta";
 
 // contador_votos=2 por omissão nos testes que não são sobre confirmações —
@@ -123,19 +123,13 @@ describe("calcularEstado — cortes oficiais (E-Redes)", () => {
     expect(calcularEstado(alerta)).toBe("inativo");
   });
 
-  it("estaProgramadoEmBreve só conta os próximos 7 dias por omissão", () => {
+  it("estaProgramado continua true sem limite de dias, por mais longe que o corte esteja", () => {
     const agora = new Date("2026-01-01T00:00:00Z");
-    const dentroDoPrazo = alertaBase({
+    const daquiA45Dias = alertaBase({
       origem: "oficial",
-      data_inicio: "2026-01-06T00:00:00Z",
-      data_fim: "2026-01-06T02:00:00Z",
+      data_inicio: "2026-02-15T00:00:00Z",
+      data_fim: "2026-02-15T02:00:00Z",
     });
-    const foraDoPrazo = alertaBase({
-      origem: "oficial",
-      data_inicio: "2026-01-20T00:00:00Z",
-      data_fim: "2026-01-20T02:00:00Z",
-    });
-    expect(estaProgramadoEmBreve(dentroDoPrazo, agora)).toBe(true);
-    expect(estaProgramadoEmBreve(foraDoPrazo, agora)).toBe(false);
+    expect(estaProgramado(daquiA45Dias, agora)).toBe(true);
   });
 });
