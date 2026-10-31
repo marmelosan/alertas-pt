@@ -8,59 +8,51 @@ const CORES: Record<TipoServico, string> = {
   agua: "#0ea5e9",
 };
 
+// Glifos simples e preenchidos (não o traço fino do Lucide) — a esta
+// escala (8-9px dentro do pin) um ícone de traço fica praticamente
+// invisível; um silhueta cheia lê-se bem mesmo em miniatura.
+const ICONES: Record<TipoServico, string> = {
+  luz: '<path d="M7 2v11h3v9l7-12h-4l4-8z"/>',
+  agua: '<path d="M12 2C7 7 4 11.5 4 15a8 8 0 0 0 16 0c0-3.5-3-8-8-13z"/>',
+};
+
 /**
  * Ícone de marcador partilhado entre o mapa interativo da home e o mapa
  * por concelho — a mesma linguagem visual nos dois sítios, para quem já
- * aprendeu a ler um não ter de decifrar outro código de cores no outro.
+ * aprendeu a ler um não ter de decifrar outro código no outro.
  *
- * origem oficial = quadrado; comunidade = círculo. A forma sozinha é um
- * sinal fraco a 18px (um quadrado arredondado e um círculo ficam
- * parecidos de relance); o contorno reforça-a com um segundo sinal
- * independente: oficial tem contorno escuro grosso, comunidade mantém o
- * branco fino.
+ * Três sinais independentes, não só cor: forma (quadrado = oficial,
+ * círculo = comunidade), o próprio glifo dentro do pin (raio/gota, serve
+ * também quem tem dificuldade em distinguir âmbar de azul) e o
+ * contorno/opacidade (sólido = ativo, tracejado oco = por confirmar,
+ * tracejado esbatido = programado). O estilo em si (anéis, sombra, SVG)
+ * vive em globals.css na classe `.marcador-alerta`, não inline — mais
+ * fácil de manter os dois mapas visualmente idênticos.
  */
 export function criarIconeAlerta(
   tipo: TipoServico,
   origem: Alerta["origem"],
   estadoVisual: EstadoVisualMarcador
 ): L.DivIcon {
-  const cor = CORES[tipo];
-  const forma =
-    origem === "oficial"
-      ? `width:14px;height:14px;border-radius:3px;`
-      : `width:16px;height:16px;border-radius:50%;`;
-  const contorno = origem === "oficial" ? "3px solid #1c1917" : "2px solid white";
+  const classes = [
+    "marcador-alerta",
+    origem === "oficial" ? "marcador-alerta--oficial" : "marcador-alerta--comunidade",
+    estadoVisual === "por_confirmar" && "marcador-alerta--por-confirmar",
+    estadoVisual === "programado" && "marcador-alerta--programado",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
-  if (estadoVisual === "por_confirmar") {
-    // "por confirmar" (Bloco 6): preenchimento oco + contorno tracejado, em vez
-    // de sólido — sinaliza visualmente que ainda não é uma falha confirmada.
-    // Só acontece para reportes da comunidade (um corte oficial nunca fica
-    // "por confirmar"), por isso não há conflito visual com "programado" abaixo.
-    return L.divIcon({
-      className: "",
-      html: `<div style="${forma}background:white;border:2px dashed ${cor};opacity:0.85;"></div>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    });
-  }
-
-  if (estadoVisual === "programado") {
-    // Corte oficial já confirmado pela E-Redes mas que ainda não começou —
-    // mesmo quadrado/cor do oficial ativo (para se reconhecer que é da
-    // E-Redes à mesma), só mais esbatido e com contorno tracejado, para não
-    // se confundir com um corte já em curso agora.
-    return L.divIcon({
-      className: "",
-      html: `<div style="${forma}background:${cor};border:2px dashed #1c1917;opacity:0.55;"></div>`,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    });
-  }
+  const html = `<div class="${classes}" style="--cor:${CORES[tipo]}">
+      <span class="marcador-alerta__corpo">
+        <svg viewBox="0 0 24 24" aria-hidden="true">${ICONES[tipo]}</svg>
+      </span>
+    </div>`;
 
   return L.divIcon({
     className: "",
-    html: `<div style="${forma}background:${cor};border:${contorno};box-shadow:0 1px 4px rgba(0,0,0,.4);"></div>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
+    html,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
   });
 }
