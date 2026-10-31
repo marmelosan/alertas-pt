@@ -23,14 +23,12 @@ const LIMITES_MAXIMOS: [[number, number], [number, number]] = [
   [43.5, -5],
 ];
 
-// O polígono já não codifica origem por cor (isso ficou a cargo dos pins,
-// que usam o mesmo código de cor/forma do mapa da home) — aqui é só um
-// destaque neutro "há algo a assinalar aqui" vs. "sem alertas", para dar
-// que pensar mesmo antes de se reparar nos pins em si.
-const COR_DESTAQUE = "#fbbf24";
-const COR_DESTAQUE_LINHA = "#b45309";
-const COR_SEM_ALERTAS = "#f4f4f5";
-const COR_SEM_ALERTAS_LINHA = "#d4d4d8";
+// O polígono é só o contorno/fundo neutro do concelho (clicável para
+// navegar) — quem diz onde há alertas são só os pins, não o polígono
+// também. Ter os dois a dizer a mesma coisa (amarelo + pins) era
+// informação a dobrar sem necessidade.
+const COR_FUNDO = "#f4f4f5";
+const COR_FUNDO_LINHA = "#d4d4d8";
 
 // A partir deste zoom há poucos concelhos visíveis de cada vez, por isso dá
 // para escrever o nome de cada um sem o mapa ficar ilegível de texto. Em
@@ -102,19 +100,15 @@ export function MapaConcelhos({
     );
   }
 
-  const estilo = (feature?: Feature<Geometry, ConcelhoProperties>): PathOptions => {
-    const slug = feature ? paraSlug(feature.properties.con_name) : "";
-    const temAlerta = oficiaisSlugs.has(slug) || comunidadeSlugs.has(slug);
-    // Mais transparente quando não há nada a assinalar — deixa o mapa de
-    // base (e os nomes de localidades dele) aparecer por baixo em vez de
-    // ficar tapado por uma mancha sólida branca.
-    return {
-      fillColor: temAlerta ? COR_DESTAQUE : COR_SEM_ALERTAS,
-      fillOpacity: temAlerta ? 0.35 : 0.45,
-      color: temAlerta ? COR_DESTAQUE_LINHA : COR_SEM_ALERTAS_LINHA,
-      weight: 1,
-    };
-  };
+  // Mesmo estilo para todos os concelhos — a cor já não diz se há alertas
+  // ou não (isso é com os pins). Transparente o suficiente para o mapa de
+  // base (e os nomes de localidades dele) aparecer por baixo.
+  const estilo = (): PathOptions => ({
+    fillColor: COR_FUNDO,
+    fillOpacity: 0.45,
+    color: COR_FUNDO_LINHA,
+    weight: 1,
+  });
 
   const aoAdicionarFeature = (feature: Feature<Geometry, ConcelhoProperties>, layer: Layer) => {
     const nome = feature.properties.con_name;
