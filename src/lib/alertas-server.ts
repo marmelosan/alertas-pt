@@ -41,9 +41,13 @@ const listarAlertasComStatusAtivo = cache(async (): Promise<Alerta[]> => {
 });
 
 /**
- * Concelhos com pelo menos um alerta ATIVO agora, separados por origem —
- * usado para colorir o mapa por concelho com cores diferentes para cortes
- * programados confirmados pela E-Redes vs. reportes da comunidade.
+ * Concelhos com pelo menos um alerta a assinalar no mapa, separados por
+ * origem — usado para colorir o mapa por concelho. Reportes da comunidade
+ * só contam enquanto "ativo" (não há noção de "programado" para eles); já
+ * os cortes oficiais da E-Redes contam também quando "programado" dentro
+ * dos próximos 7 dias — a legenda do mapa diz "Corte programado (E-Redes)"
+ * precisamente para isto, e um corte de amanhã já marcado na BD devia
+ * aparecer assinalado hoje, não só no dia em que começa.
  */
 export const listarConcelhosComAlertasAtivos = cache(async (): Promise<ConcelhosAtivosPorOrigem> => {
   const alertas = await listarAlertasComStatusAtivo();
@@ -51,8 +55,12 @@ export const listarConcelhosComAlertasAtivos = cache(async (): Promise<Concelhos
   const oficial = new Set<string>();
   const comunidade = new Set<string>();
   for (const alerta of alertas) {
-    if (calcularEstado(alerta, agora) !== "ativo") continue;
-    (alerta.origem === "oficial" ? oficial : comunidade).add(alerta.concelho);
+    const estado = calcularEstado(alerta, agora);
+    if (alerta.origem === "oficial") {
+      if (estado === "ativo" || estaProgramadoEmBreve(alerta, agora)) oficial.add(alerta.concelho);
+    } else if (estado === "ativo") {
+      comunidade.add(alerta.concelho);
+    }
   }
   return { oficial: [...oficial], comunidade: [...comunidade] };
 });
