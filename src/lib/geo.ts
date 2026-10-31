@@ -81,35 +81,38 @@ export interface LocalizacaoPorCodigoPostal extends LocalizacaoAproximada {
 }
 
 /**
- * Geocodificação direta a partir de um código postal português (via
- * Nominatim). Usada pela sincronização da E-Redes, cujos dados vêm
- * organizados por código postal, não por coordenadas.
+ * Geocodificação direta a partir de um código postal português — usada
+ * pela sincronização da E-Redes, cujos dados vêm organizados por código
+ * postal, não por coordenadas. Chamada do lado do servidor: usa o
+ * LocationIQ em vez da Nominatim pública, que bloqueia com 403 os IPs
+ * partilhados de serviços cloud como a Vercel/GitHub Actions (mesmo com
+ * um User-Agent identificável). Mesma origem de dados (OpenStreetMap) e
+ * formato de pedido/resposta compatível — só muda o endpoint e a chave.
  *
- * Nota: a política de uso da Nominatim pede no máximo 1 pedido/segundo —
- * quem chamar isto em lote (ex.: o job de sincronização) tem de espaçar
- * as chamadas, não é responsabilidade desta função.
+ * Nota: a política de uso da LocationIQ também pede no máximo 2
+ * pedidos/segundo no plano grátis — quem chamar isto em lote (ex.: o job
+ * de sincronização) tem de espaçar as chamadas, não é responsabilidade
+ * desta função.
  */
 export async function geocodificarCodigoPostal(
   codigoPostal: string
 ): Promise<LocalizacaoPorCodigoPostal | null> {
-  const url = new URL("https://nominatim.openstreetmap.org/search");
+  const chave = process.env.LOCATIONIQ_API_KEY;
+  if (!chave) {
+    throw new Error("LOCATIONIQ_API_KEY em falta — ver .env.local.example");
+  }
+
+  const url = new URL("https://us1.locationiq.com/v1/search");
+  url.searchParams.set("key", chave);
   url.searchParams.set("format", "jsonv2");
   url.searchParams.set("postalcode", codigoPostal);
   url.searchParams.set("country", "Portugal");
   url.searchParams.set("addressdetails", "1");
   url.searchParams.set("limit", "1");
 
-  // Chamada do lado do servidor (job de sincronização): ao contrário do
-  // browser, o fetch do Node não manda um User-Agent identificável sozinho
-  // — e a política de uso da Nominatim rejeita com 403 qualquer pedido sem
-  // um. https://operations.osmfoundation.org/policies/nominatim/
-  const res = await fetch(url, {
-    headers: {
-      "Accept-Language": "pt-PT",
-      "User-Agent": `FoiAbaixo/1.0 (${process.env.NEXT_PUBLIC_SITE_URL ?? "https://foiabaixo.vercel.app"})`,
-    },
-  });
-  if (!res.ok) throw new Error(`Nominatim devolveu ${res.status}`);
+  const res = await fetch(url, { headers: { "Accept-Language": "pt-PT" } });
+  if (res.status === 404) return null; // LocationIQ devolve 404 quando não encontra nada, não um array vazio
+  if (!res.ok) throw new Error(`LocationIQ devolveu ${res.status}`);
 
   const resultados = await res.json();
   const primeiro = resultados?.[0];
