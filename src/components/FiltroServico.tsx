@@ -23,7 +23,7 @@ export function FiltroServico({ valor, onChange }: FiltroServicoProps) {
           type="button"
           onClick={() => onChange(opcao.valor)}
           aria-pressed={valor === opcao.valor}
-          className={`min-h-11 flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-semibold transition-colors ${
+          className={`min-h-11 flex items-center gap-1 rounded-full px-2.5 py-2 text-xs font-semibold transition-colors sm:gap-1.5 sm:px-4 sm:text-sm ${
             valor === opcao.valor
               ? "bg-stone-900 text-white dark:bg-white dark:text-stone-900"
               : "bg-stone-100 text-stone-700 hover:bg-stone-200 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"

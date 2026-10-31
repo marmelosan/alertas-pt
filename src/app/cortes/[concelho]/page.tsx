@@ -6,6 +6,7 @@ import { estaAtivo, estaPorConfirmar, estaProgramado } from "@/lib/estado-alerta
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { BotaoConfirmar } from "@/components/BotaoConfirmar";
 import { Zap, Droplet, ShieldCheck, Users } from "lucide-react";
+import { RegistarVistaConcelho } from "@/components/RegistarVistaConcelho";
 import type { Alerta } from "@/types/alerta";
 
 export const revalidate = 300; // 5 min — conteúdo sempre fresco sem rebuild manual
@@ -150,6 +151,7 @@ export default async function PaginaConcelho({ params }: PageProps) {
     <div className="mx-auto flex max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdFAQ) }} />
+      <RegistarVistaConcelho concelho={concelho} />
 
       <Breadcrumb trilha={[{ label: "Concelhos", href: "/cortes" }, { label: concelho }]} />
 

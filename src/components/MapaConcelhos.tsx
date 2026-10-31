@@ -11,6 +11,7 @@ import { Zap, Droplet, ShieldCheck, Users, Clock } from "lucide-react";
 import { paraSlug } from "@/lib/slug";
 import { criarIconeAlerta } from "@/lib/icones-mapa";
 import { formatarDataHora } from "@/lib/tempo";
+import { registarAberturaMarcador } from "@/lib/analytics";
 import type { AlertaMapaConcelho, ConcelhosAtivosPorOrigem } from "@/lib/alertas-server";
 
 const LIMITES_PORTUGAL: [[number, number], [number, number]] = [
@@ -148,6 +149,9 @@ export function MapaConcelhos({
             key={ponto.id}
             position={[ponto.latitude, ponto.longitude]}
             icon={criarIconeAlerta(ponto.tipo_servico, ponto.origem, ponto.estadoVisual)}
+            eventHandlers={{
+              popupopen: () => registarAberturaMarcador(ponto.tipo_servico, ponto.origem, ponto.estadoVisual),
+            }}
           >
             <Popup>
               <div className="flex flex-col gap-1 text-sm">

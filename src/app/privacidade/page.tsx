@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Breadcrumb } from "@/components/Breadcrumb";
+import { BotaoPreferenciasCookies } from "@/components/BotaoPreferenciasCookies";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://foiabaixo.vercel.app";
 
@@ -75,8 +76,15 @@ export default function PaginaPrivacidade() {
         <section>
           <h2 className="font-semibold text-stone-900 dark:text-stone-50">Analytics</h2>
           <p className="mt-1">
-            Só carregamos ferramentas de analytics depois de aceitares no aviso de cookies — por omissão, tudo vem
-            desativado. Podes mudar de ideia a qualquer momento limpando os dados do site no teu browser.
+            Usamos o Google Analytics 4 (via Google Tag Manager) para perceber como o site é usado — que páginas são
+            vistas, que filtros são usados, quantos reportes são enviados. Seguimos o Consent Mode v2 da Google: por
+            omissão, antes de escolheres, tudo vem bloqueado (nada é enviado à Google); só depois de clicares
+            &quot;Aceitar&quot; no aviso é que o analytics passa a funcionar. Nunca enviamos coordenadas exatas,
+            texto que escrevas em caixas de pesquisa, notas de reportes, nem nenhum identificador que te permita ser
+            reconhecido.
+          </p>
+          <p className="mt-2">
+            Podes mudar de ideia a qualquer momento: <BotaoPreferenciasCookies className="font-semibold underline underline-offset-2" />.
           </p>
         </section>
 

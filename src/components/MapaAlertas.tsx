@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
-import { MapPin, Map as MapIcon, MousePointerClick, CheckCircle2, X, Loader2, Zap, Droplet, Share2, Check, WifiOff, ShieldCheck, Users, Clock } from "lucide-react";
+import { MapPin, Map as MapIcon, MousePointerClick, CheckCircle2, X, Loader2, Zap, Droplet, Share2, Check, WifiOff, ShieldCheck, Users, Clock, ChevronDown, Search } from "lucide-react";
 import Link from "next/link";
 import "leaflet/dist/leaflet.css";
 import type { Alerta, TipoServico } from "@/types/alerta";
@@ -19,7 +19,18 @@ import { processarFila } from "@/lib/fila-offline";
 import { estaPorConfirmar } from "@/lib/estado-alerta";
 import { criarIconeAlerta, type EstadoVisualMarcador } from "@/lib/icones-mapa";
 import { tempoRelativo, formatarDataHora } from "@/lib/tempo";
-import { registarEvento } from "@/lib/analytics";
+import {
+  registarEvento,
+  registarInicioReporte,
+  registarReporteEnviado,
+  registarReporteEmFilaOffline,
+  registarReportesSincronizados,
+  registarErroReporte,
+  registarCliqueLocalizarMe,
+  registarAberturaMarcador,
+  registarFiltroUsado,
+  registarPesquisaUsada,
+} from "@/lib/analytics";
 import { FiltroServico } from "@/components/FiltroServico";
 import { FormularioReporte } from "@/components/FormularioReporte";
 import { BuscaLocal } from "@/components/BuscaLocal";
@@ -107,6 +118,11 @@ export function MapaAlertas() {
   const [aLocalizar, setALocalizar] = useState(false);
   const [estado, setEstado] = useState<EstadoServico | null>(null);
   const [erroEstado, setErroEstado] = useState(false);
+  // Pesquisa e legenda escondidas por omissão só no telemóvel (onde o
+  // espaço vertical é precioso e o mapa precisa dele mais do que elas) —
+  // a partir de sm: ficam sempre visíveis, independente destes estados.
+  const [pesquisaAberta, setPesquisaAberta] = useState(false);
+  const [legendaAberta, setLegendaAberta] = useState(false);
 
   // o aviso desaparece sozinho ao fim de uns segundos — não obriga a pessoa a fechar à mão
   useEffect(() => {
@@ -158,6 +174,7 @@ export function MapaAlertas() {
             tipo: "sucesso",
             texto: `${enviados} ${enviados === 1 ? "reporte enviado" : "reportes enviados"} agora que há ligação.`,
           });
+          registarReportesSincronizados(enviados);
           listarAlertasAtivos()
             .then(setAlertas)
             .catch(() => {});
@@ -255,6 +272,7 @@ export function MapaAlertas() {
   /** Reporte de um toque: usa a localização do telemóvel em vez de ter de clicar no mapa. */
   function reportarAqui() {
     setErro(null);
+    registarCliqueLocalizarMe();
 
     if (!navigator.geolocation) {
       setErro("O teu browser não suporta localização — clica no mapa no sítio exato em vez disso.");
@@ -269,6 +287,7 @@ export function MapaAlertas() {
         setPontoPendente(coord);
         setFoco(coord);
         registarEvento("localizacao_usada");
+        registarInicioReporte("localizacao");
       },
       (erroGeo) => {
         setALocalizar(false);
@@ -277,6 +296,7 @@ export function MapaAlertas() {
             ? "Não autorizaste a localização. Clica no mapa no sítio exato em vez disso."
             : "Não consegui obter a tua localização. Clica no mapa no sítio exato em vez disso."
         );
+        registarErroReporte("geolocalizacao");
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
@@ -284,7 +304,7 @@ export function MapaAlertas() {
 
   function selecionarBusca(local: ResultadoBusca) {
     setFoco({ lat: local.latitude, lng: local.longitude });
-    registarEvento("pesquisa_local_usada");
+    registarPesquisaUsada();
   }
 
   async function enviarReporte(dados: {
@@ -306,19 +326,21 @@ export function MapaAlertas() {
         tipo: "offline",
         texto: "Sem ligação: o teu reporte fica guardado e é enviado quando houver rede.",
       });
+      registarReporteEmFilaOffline(dados.tipo_servico);
       return;
     }
 
     setAlertas((prev) => [resultado.alerta, ...prev]);
     setAviso({ tipo: "sucesso", texto: "Reportado! Obrigado — já aparece no mapa." });
-    registarEvento("report_submitted", {
-      tipo_servico: resultado.alerta.tipo_servico,
-      concelho: resultado.alerta.concelho,
-    });
+    registarReporteEnviado(resultado.alerta.tipo_servico, resultado.alerta.concelho);
   }
 
   return (
-    <div className="relative flex min-h-[600px] flex-1 flex-col">
+    // min-h-[70dvh] no telemóvel garante que este bloco todo (barras + mapa)
+    // ocupa a maior parte do ecrã visível, mesmo com tudo o que vem antes
+    // dele na página (cabeçalho, nav) — sem isto, o mapa (flex-1) só
+    // herdava o que sobrava depois das barras, e nem sempre sobrava muito.
+    <div className="relative flex min-h-[70dvh] flex-1 flex-col sm:min-h-[600px]">
       {aCarregar ? (
         <div className="esqueleto flex items-center gap-2 border-b border-stone-200 bg-white px-4 py-2 dark:border-stone-800 dark:bg-stone-950">
           <span className="h-2 w-2 rounded-full bg-stone-200 dark:bg-stone-800" />
@@ -351,26 +373,32 @@ export function MapaAlertas() {
       )}
 
       {concelhosProgramados.length > 0 && (
-        <div className="relative z-[1000] flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 border-b border-stone-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-800 dark:border-stone-800 dark:bg-amber-950 dark:text-amber-200">
+        <div className="relative z-[1000] flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 border-b border-stone-200 bg-amber-50 px-4 py-1.5 text-center text-xs text-amber-800 sm:py-2 dark:border-stone-800 dark:bg-amber-950 dark:text-amber-200">
           <Clock size={14} className="shrink-0" aria-hidden />
-          <span>
+          <span className="line-clamp-1 sm:line-clamp-none">
             Cortes programados pela E-Redes nos próximos dias em{" "}
             {concelhosProgramados.slice(0, 6).join(", ")}
             {concelhosProgramados.length > 6 && ` e mais ${concelhosProgramados.length - 6}`}.
           </span>
-          <Link href="/cortes" className="font-semibold underline underline-offset-2">
+          <Link href="/cortes" className="shrink-0 font-semibold underline underline-offset-2">
             Ver detalhes
           </Link>
         </div>
       )}
 
-      <div className="relative z-[1000] flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-950">
-        <FiltroServico valor={filtro} onChange={setFiltro} />
+      <div className="relative z-[1000] flex flex-wrap items-center justify-between gap-1.5 border-b border-stone-200 bg-white px-4 py-2 sm:gap-3 sm:py-3 dark:border-stone-800 dark:bg-stone-950">
+        <FiltroServico
+          valor={filtro}
+          onChange={(v) => {
+            setFiltro(v);
+            registarFiltroUsado(v);
+          }}
+        />
         <button
           type="button"
           onClick={reportarAqui}
           disabled={aLocalizar}
-          className="min-h-11 flex items-center gap-1.5 rounded-full bg-amber-500 px-4 py-2 text-sm font-semibold text-stone-900 transition-colors disabled:opacity-60"
+          className="min-h-11 flex items-center gap-1 rounded-full bg-amber-500 px-2.5 py-2 text-xs font-semibold text-stone-900 transition-colors disabled:opacity-60 sm:gap-1.5 sm:px-4 sm:text-sm"
         >
           {aLocalizar ? (
             "A localizar…"
@@ -382,7 +410,37 @@ export function MapaAlertas() {
         </button>
       </div>
 
-      <div className="relative z-[1200] flex flex-wrap items-center gap-2 border-b border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-950">
+      {/*
+        Pesquisa e legenda, no telemóvel, ficam escondidas atrás de dois
+        botões compactos numa única linha (em vez de uma linha inteira cada
+        uma) — eram, juntas, a maior causa do mapa ficar espremido numa
+        fatia pequena do ecrã. A partir de sm: (onde sobra altura) ambas
+        ficam sempre visíveis e os botões nem se mostram.
+      */}
+      <div className="flex border-b border-stone-200 bg-white text-xs font-medium text-stone-500 sm:hidden dark:border-stone-800 dark:bg-stone-950 dark:text-stone-400">
+        <button
+          type="button"
+          onClick={() => setPesquisaAberta((a) => !a)}
+          className="flex min-h-9 flex-1 items-center justify-center gap-1 border-r border-stone-200 py-1.5 dark:border-stone-800"
+          aria-expanded={pesquisaAberta}
+        >
+          <Search size={13} aria-hidden /> Pesquisar
+          <ChevronDown size={13} className={`shrink-0 transition-transform ${pesquisaAberta ? "rotate-180" : ""}`} aria-hidden />
+        </button>
+        <button
+          type="button"
+          onClick={() => setLegendaAberta((a) => !a)}
+          className="flex min-h-9 flex-1 items-center justify-center gap-1 py-1.5"
+          aria-expanded={legendaAberta}
+        >
+          Legenda
+          <ChevronDown size={13} className={`shrink-0 transition-transform ${legendaAberta ? "rotate-180" : ""}`} aria-hidden />
+        </button>
+      </div>
+
+      <div
+        className={`${pesquisaAberta ? "flex" : "hidden"} relative z-[1200] flex-wrap items-center gap-2 border-b border-stone-200 bg-white px-4 py-2 sm:flex sm:py-3 dark:border-stone-800 dark:bg-stone-950`}
+      >
         <BuscaLocal onSelecionar={selecionarBusca} />
         <button
           type="button"
@@ -393,7 +451,9 @@ export function MapaAlertas() {
         </button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-stone-200 bg-white px-4 py-1.5 text-xs text-stone-500 dark:border-stone-800 dark:bg-stone-950 dark:text-stone-400">
+      <div
+        className={`${legendaAberta ? "flex" : "hidden"} flex-wrap items-center gap-x-4 gap-y-1 border-b border-stone-200 bg-white px-4 py-1.5 text-xs text-stone-500 sm:flex dark:border-stone-800 dark:bg-stone-950 dark:text-stone-400`}
+      >
         <span className="flex items-center gap-1">
           <span className="h-2.5 w-2.5 rounded-sm bg-stone-400" aria-hidden /> Oficial E-REDES
         </span>
@@ -417,9 +477,12 @@ export function MapaAlertas() {
       </div>
 
       {!pontoPendente && (
-        <div className="relative z-[1000] flex items-center justify-center gap-1.5 bg-amber-50 px-4 py-2 text-center text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+        <div className="relative z-[1000] flex items-center justify-center gap-1.5 bg-amber-50 px-4 py-1.5 text-center text-xs text-amber-800 sm:py-2 sm:text-sm dark:bg-amber-950 dark:text-amber-200">
           <MousePointerClick size={15} className="shrink-0" aria-hidden />
-          Clica no mapa no sítio exato onde falta o serviço — ou usa &quot;Falta aqui agora&quot;.
+          <span className="sm:hidden">Clica no mapa no sítio exato onde falta o serviço.</span>
+          <span className="hidden sm:inline">
+            Clica no mapa no sítio exato onde falta o serviço — ou usa &quot;Falta aqui agora&quot;.
+          </span>
         </div>
       )}
 
@@ -469,6 +532,7 @@ export function MapaAlertas() {
             onClique={(lat, lng) => {
               setPontoPendente({ lat, lng });
               setFoco({ lat, lng });
+              registarInicioReporte("mapa");
             }}
           />
           <CentrarMapa coord={foco} />
@@ -489,6 +553,9 @@ export function MapaAlertas() {
               key={alerta.id}
               position={[alerta.latitude, alerta.longitude]}
               icon={criarIconeAlerta(alerta.tipo_servico, alerta.origem, alerta.estadoVisual)}
+              eventHandlers={{
+                popupopen: () => registarAberturaMarcador(alerta.tipo_servico, alerta.origem, alerta.estadoVisual),
+              }}
               // L.DivIcon não é uma <img> — a opção `alt` do Leaflet não produz
               // nenhum atributo acessível num <div> (fica só uma propriedade JS
               // sem efeito). Define-se aria-label diretamente no elemento, via

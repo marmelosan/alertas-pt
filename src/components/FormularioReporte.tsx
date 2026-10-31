@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Zap, Droplet } from "lucide-react";
 import type { TipoServico } from "@/types/alerta";
 import { geocodificarInverso } from "@/lib/geo";
+import { registarEtapaReporte, registarErroReporte } from "@/lib/analytics";
 
 interface FormularioReporteProps {
   latitude: number;
@@ -70,6 +71,7 @@ export function FormularioReporte({
     } catch (erro) {
       setErro(erro instanceof Error ? erro.message : "Não consegui guardar o alerta. Tenta outra vez.");
       setAEnviar(false);
+      registarErroReporte("submissao");
     }
   }
 
@@ -83,7 +85,10 @@ export function FormularioReporte({
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={() => setTipoServico("luz")}
+          onClick={() => {
+            setTipoServico("luz");
+            registarEtapaReporte("tipo_servico");
+          }}
           className={`min-h-11 flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
             tipoServico === "luz"
               ? "bg-amber-500 text-stone-900"
@@ -94,7 +99,10 @@ export function FormularioReporte({
         </button>
         <button
           type="button"
-          onClick={() => setTipoServico("agua")}
+          onClick={() => {
+            setTipoServico("agua");
+            registarEtapaReporte("tipo_servico");
+          }}
           className={`min-h-11 flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${
             tipoServico === "agua"
               ? "bg-sky-500 text-white"

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
+import { BotaoPreferenciasCookies } from "@/components/BotaoPreferenciasCookies";
 
 const NAVEGAR = [
   { href: "/", label: "Mapa" },
@@ -42,6 +43,7 @@ export function SiteFooter() {
                 {item.label}
               </Link>
             ))}
+            <BotaoPreferenciasCookies />
           </div>
         </div>
       </div>
