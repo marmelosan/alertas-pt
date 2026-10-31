@@ -65,6 +65,54 @@ export const listarConcelhosComAlertasAtivos = cache(async (): Promise<Concelhos
   return { oficial: [...oficial], comunidade: [...comunidade] };
 });
 
+export interface AlertaMapaConcelho {
+  id: string;
+  tipo_servico: Alerta["tipo_servico"];
+  origem: Alerta["origem"];
+  concelho: string;
+  freguesia: string | null;
+  latitude: number;
+  longitude: number;
+  data_inicio: string | null;
+  estadoVisual: "ativo" | "programado";
+}
+
+/**
+ * Os mesmos alertas de `listarConcelhosComAlertasAtivos`, mas devolvidos
+ * como pontos com coordenada real em vez de só o nome do concelho — para
+ * pôr os mesmos pins do mapa da home também aqui. O preenchimento do
+ * polígono acima depende do nome do concelho bater certo com o GeoJSON
+ * (`paraSlug`); um pin não depende disso, aparece sempre no sítio exato
+ * mesmo que a geocodificação tenha devolvido um nome ligeiramente
+ * diferente do nome oficial do concelho.
+ */
+export const listarAlertasParaMapaConcelhos = cache(async (): Promise<AlertaMapaConcelho[]> => {
+  const alertas = await listarAlertasComStatusAtivo();
+  const agora = new Date();
+  const pontos: AlertaMapaConcelho[] = [];
+
+  for (const alerta of alertas) {
+    const estado = calcularEstado(alerta, agora);
+    const estadoVisual: AlertaMapaConcelho["estadoVisual"] | null =
+      estado === "ativo" ? "ativo" : alerta.origem === "oficial" && estaProgramadoEmBreve(alerta, agora) ? "programado" : null;
+    if (!estadoVisual) continue;
+
+    pontos.push({
+      id: alerta.id,
+      tipo_servico: alerta.tipo_servico,
+      origem: alerta.origem,
+      concelho: alerta.concelho,
+      freguesia: alerta.freguesia,
+      latitude: alerta.latitude,
+      longitude: alerta.longitude,
+      data_inicio: alerta.data_inicio,
+      estadoVisual,
+    });
+  }
+
+  return pontos;
+});
+
 export interface CartaoConcelho {
   concelho: string;
   total: number;
