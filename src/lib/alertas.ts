@@ -28,6 +28,27 @@ export async function listarAlertasAtivos(): Promise<Alerta[]> {
   return (data ?? []).filter((alerta) => estaVisivelAgora(alerta, agora));
 }
 
+/**
+ * Cortes oficiais da E-Redes já confirmados mas ainda não começados,
+ * dentro dos próximos 7 dias (`estaProgramadoEmBreve`). Pedido à parte de
+ * `listarAlertasAtivos()` de propósito: o painel de "reportes recentes"
+ * também usa essa função e ordena por `criado_em` mostrando "há Xh", o
+ * que não faz sentido nenhum para um corte que ainda nem começou — só
+ * quem sabe distinguir visualmente os dois estados (o mapa) pede isto.
+ */
+export async function listarCortesProgramadosEmBreve(): Promise<Alerta[]> {
+  const { data, error } = await supabaseBrowser
+    .from("alertas")
+    .select("*")
+    .eq("status", "ativo")
+    .eq("origem", "oficial")
+    .order("data_inicio", { ascending: true });
+
+  if (error) throw error;
+  const agora = new Date();
+  return (data ?? []).filter((alerta) => estaProgramadoEmBreve(alerta, agora));
+}
+
 export interface EstadoServico {
   ativos: number;
   programadosHoje: number;
