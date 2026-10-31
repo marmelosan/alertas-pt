@@ -232,7 +232,7 @@ export default async function PaginaConcelho({ params }: PageProps) {
       {programados.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
-            Programados nos próximos 7 dias
+            Programados
           </h2>
           <ul className="flex flex-col gap-3">
             {programados.map((a) => (

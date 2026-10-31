@@ -116,7 +116,7 @@ export default async function PaginaConcelhos() {
       {concelhosProgramados.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
-            Programados nos próximos 7 dias
+            Programados nos próximos 30 dias
           </h2>
           <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
             {concelhosProgramados.map((c) => (
@@ -141,12 +141,6 @@ export default async function PaginaConcelhos() {
         </h2>
         <MapaConcelhosClient concelhosAtivos={concelhosAtivos} pontos={pontosMapa} />
         <p className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-stone-500">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full border border-amber-600 bg-amber-300" /> Concelho com alertas
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full border border-stone-300 bg-stone-100" /> Sem alertas
-          </span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm border-2 border-stone-900 bg-stone-400 dark:border-stone-100" /> Oficial E-REDES
           </span>
