@@ -116,8 +116,13 @@ async function prepararAlerta(
     if (cacheHit) {
       ({ lat, lon, concelho, freguesia } = cacheHit);
     } else {
-      // respeita o limite de ~1 pedido/segundo da Nominatim
-      await new Promise((r) => setTimeout(r, 1100));
+      // respeita o limite de ~2 pedidos/segundo do plano grátis da
+      // LocationIQ (antes era 1100ms, para a Nominatim, que só permitia
+      // 1/s) — com muitos códigos postais diferentes por sincronizar, a
+      // soma destas esperas facilmente ultrapassa os 60s de limite da
+      // função na Vercel, por isso importa não esperar mais do que o
+      // necessário.
+      await new Promise((r) => setTimeout(r, 550));
       const loc = await geocodificarCodigoPostal(codigoPostal);
       if (!loc) {
         console.warn(`[eredes-sync] não consegui geocodificar o código postal "${codigoPostal}"`, registo);
