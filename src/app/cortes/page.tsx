@@ -1,283 +1,152 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import Link from "next/link";
-import { obterConcelhoPorSlug, listarAlertasDoConcelho } from "@/lib/alertas-server";
-import { estaAtivo, estaPorConfirmar, estaProgramado } from "@/lib/estado-alerta";
+import {
+  listarCartoesConcelhos,
+  listarConcelhosComAlertasAtivos,
+  listarConcelhosComCortesProgramados,
+  obterUltimaAtualizacaoOficial,
+  type CartaoConcelho,
+  type ConcelhosAtivosPorOrigem,
+} from "@/lib/alertas-server";
+import { paraSlug } from "@/lib/slug";
+import { MapaConcelhosClient } from "@/components/MapaConcelhosClient";
 import { Breadcrumb } from "@/components/Breadcrumb";
-import { BotaoConfirmar } from "@/components/BotaoConfirmar";
-import { Zap, Droplet, ShieldCheck, Users } from "lucide-react";
-import type { Alerta } from "@/types/alerta";
+import { PesquisaConcelhos } from "@/components/PesquisaConcelhos";
 
-export const revalidate = 300; // 5 min — conteúdo sempre fresco sem rebuild manual
-export const dynamicParams = true; // concelhos novos funcionam mesmo sem estarem no sitemap ainda
-
-interface PageProps {
-  params: Promise<{ concelho: string }>;
-}
+export const revalidate = 300;
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://foiabaixo.vercel.app";
 
-export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const { concelho: slug } = await params;
-  const concelho = await obterConcelhoPorSlug(slug);
+const TITULO = "Concelhos | Foi Abaixo";
+const DESCRICAO = "Lista de concelhos com falhas de água ou luz ativas em Portugal.";
 
-  if (!concelho) {
-    return { title: "Concelho não encontrado | Foi Abaixo" };
-  }
+export const metadata: Metadata = {
+  title: TITULO,
+  description: DESCRICAO,
+  alternates: { canonical: `${SITE_URL}/cortes` },
+  openGraph: { title: TITULO, description: DESCRICAO, url: `${SITE_URL}/cortes`, images: ["/opengraph-image"] },
+  twitter: { title: TITULO, description: DESCRICAO },
+};
 
-  const alertas = await listarAlertasDoConcelho(concelho);
-  const ativos = alertas.filter((a) => estaAtivo(a));
-  const descricao = ativos.length
-    ? `${ativos.length} ${ativos.length === 1 ? "falha ativa" : "falhas ativas"} reportadas em ${concelho} agora.`
-    : `Sem falhas de água ou luz reportadas em ${concelho} neste momento.`;
+const jsonLdDataset = {
+  "@context": "https://schema.org",
+  "@type": "Dataset",
+  name: "Cortes de eletricidade programados em Portugal (E-Redes)",
+  description:
+    "Cortes de eletricidade programados pela E-Redes em Portugal, cruzados com reportes da comunidade sobre falhas de água e eletricidade em curso.",
+  url: `${SITE_URL}/cortes`,
+  license: "https://creativecommons.org/licenses/by/4.0/",
+  creator: {
+    "@type": "Organization",
+    name: "E-Redes",
+    url: "https://e-redes.opendatasoft.com/pages/homepage/",
+  },
+  isBasedOn: "https://e-redes.opendatasoft.com/pages/homepage/",
+};
 
-  return {
-    title: `Falta de Água e Luz em ${concelho} | Foi Abaixo`,
-    description: descricao,
-    alternates: { canonical: `${SITE_URL}/cortes/${slug}` },
-    openGraph: {
-      title: `Cortes de água e luz em ${concelho}`,
-      description: descricao,
-      url: `${SITE_URL}/cortes/${slug}`,
-      images: ["/opengraph-image"],
-    },
-    twitter: { title: `Cortes de água e luz em ${concelho}`, description: descricao },
-  };
+/** >36h sem sincronizar (ou nunca sincronizou) conta como desatualizado — ver Bloco 1, ponto 4. */
+function estaDesatualizado(ultimaAtualizacao: string | null): boolean {
+  if (!ultimaAtualizacao) return true;
+  const horas = (Date.now() - new Date(ultimaAtualizacao).getTime()) / 36e5;
+  return horas > 36;
 }
 
 function tempoRelativo(iso: string): string {
   const minutos = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (minutos < 1) return "agora mesmo";
   if (minutos < 60) return `há ${minutos} min`;
-  return `há ${Math.floor(minutos / 60)}h`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 48) return `há ${horas}h`;
+  return `há ${Math.floor(horas / 24)} dias`;
 }
 
-function dataFormatada(iso: string): string {
-  return new Date(iso).toLocaleString("pt-PT", {
-    weekday: "short",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-interface CorteProgramadoAgrupado extends Alerta {
-  /** Quantas ruas/zonas diferentes a E-Redes listou para esta mesma janela — 1 = sem agrupamento. */
-  zonas: number;
-}
-
-/**
- * A E-Redes lista o mesmo corte uma vez por rua/zona afetada dentro da
- * mesma freguesia, cada uma com o seu próprio registo — sem agrupar por
- * freguesia + janela horária, a lista mostrava a mesma manutenção
- * repetida dezenas de vezes seguidas.
- */
-function agruparProgramados(alertas: Alerta[]): CorteProgramadoAgrupado[] {
-  const porChave = new Map<string, CorteProgramadoAgrupado>();
-  for (const alerta of alertas) {
-    const chave = `${alerta.freguesia ?? ""}|${alerta.data_inicio ?? ""}|${alerta.data_fim ?? ""}`;
-    const atual = porChave.get(chave);
-    if (atual) atual.zonas++;
-    else porChave.set(chave, { ...alerta, zonas: 1 });
+export default async function PaginaConcelhos() {
+  let concelhosAtivos: ConcelhosAtivosPorOrigem = { oficial: [], comunidade: [] };
+  let cartoes: CartaoConcelho[] = [];
+  let concelhosProgramados: string[] = [];
+  let ultimaAtualizacaoOficial: string | null = null;
+  let erroAoCarregar = false;
+  try {
+    concelhosAtivos = await listarConcelhosComAlertasAtivos();
+    cartoes = await listarCartoesConcelhos();
+    concelhosProgramados = (await listarConcelhosComCortesProgramados()).sort((a, b) => a.localeCompare(b, "pt"));
+    ultimaAtualizacaoOficial = await obterUltimaAtualizacaoOficial();
+  } catch {
+    // mostra a página na mesma, só sem dados, em vez de rebentar
+    erroAoCarregar = true;
   }
-  return [...porChave.values()];
-}
 
-export default async function PaginaConcelho({ params }: PageProps) {
-  const { concelho: slug } = await params;
-  const concelho = await obterConcelhoPorSlug(slug);
-
-  if (!concelho) notFound();
-
-  const alertas = await listarAlertasDoConcelho(concelho);
-  const ativos = alertas.filter((a) => estaAtivo(a));
-  const luzAtivos = ativos.filter((a) => a.tipo_servico === "luz");
-  const aguaAtivos = ativos.filter((a) => a.tipo_servico === "agua");
-  const porConfirmar = alertas.filter((a) => estaPorConfirmar(a));
-  // A E-Redes lista o mesmo corte uma vez por cada rua/zona afetada dentro
-  // da mesma freguesia — sem agrupar, a mesma janela de manutenção
-  // aparecia repetida dezenas de vezes seguidas na lista.
-  const programados = agruparProgramados(alertas.filter((a) => estaProgramado(a))).sort((a, b) =>
-    (a.data_inicio ?? "").localeCompare(b.data_inicio ?? "")
-  );
-
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "ItemList",
-    name: `Falhas de água e luz em ${concelho}`,
-    itemListElement: ativos.map((a, i) => ({
-      "@type": "ListItem",
-      position: i + 1,
-      item: {
-        "@type": "Event",
-        name: a.tipo_servico === "luz" ? `Falta de luz em ${a.freguesia ?? concelho}` : `Falta de água em ${a.freguesia ?? concelho}`,
-        startDate: a.criado_em,
-        eventStatus: "https://schema.org/EventScheduled",
-        location: {
-          "@type": "Place",
-          name: a.freguesia ? `${a.freguesia}, ${concelho}` : concelho,
-          geo: { "@type": "GeoCoordinates", latitude: a.latitude, longitude: a.longitude },
-        },
-      },
-    })),
-  };
-
-  const FAQ_CONCELHO = [
-    {
-      pergunta: `Como reporto uma falha de água ou luz em ${concelho}?`,
-      resposta:
-        "Vai ao mapa, clica no sítio exato onde falta o serviço (ou usa \"Falta aqui agora\" para localização automática), escolhe água ou luz, e envia. Não precisas de conta.",
-    },
-    {
-      pergunta: "Estes dados são oficiais?",
-      resposta:
-        "Os cortes de luz programados vêm diretamente da E-Redes. Avarias inesperadas e falhas de água são reportadas pela comunidade — cada alerta mostra a origem.",
-    },
-  ];
-
-  const jsonLdFAQ = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: FAQ_CONCELHO.map((f) => ({
-      "@type": "Question",
-      name: f.pergunta,
-      acceptedAnswer: { "@type": "Answer", text: f.resposta },
-    })),
-  };
+  const dadosOficiaisDesatualizados = estaDesatualizado(ultimaAtualizacaoOficial);
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-1 flex-col gap-6 px-4 py-8">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdFAQ) }} />
-
-      <Breadcrumb trilha={[{ label: "Concelhos", href: "/cortes" }, { label: concelho }]} />
+    <div className="mx-auto flex max-w-5xl flex-1 flex-col gap-6 px-4 py-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLdDataset) }} />
+      <Breadcrumb trilha={[{ label: "Concelhos" }]} />
 
       <header>
-        <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-50">
-          Cortes de Água e Luz em {concelho}
-        </h1>
+        <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-50">Concelhos com alertas ativos</h1>
         <p className="mt-2 text-stone-600 dark:text-stone-400">
-          {ativos.length === 0 && `Sem falhas de água ou luz reportadas em ${concelho} neste momento.`}
-          {ativos.length > 0 &&
-            `${ativos.length} ${ativos.length === 1 ? "falha ativa" : "falhas ativas"} em ${concelho} agora — ${luzAtivos.length} de luz e ${aguaAtivos.length} de água.`}
-          {" "}Dados cruzados com a E-Redes e reportados pela comunidade.
+          {cartoes.length > 0
+            ? `${cartoes.length} ${cartoes.length === 1 ? "concelho" : "concelhos"} com alertas ativos agora.`
+            : "Sem concelhos com alertas ativos neste momento — sê o primeiro a reportar."}
         </p>
+        {erroAoCarregar ? (
+          <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+            Não consegui carregar os dados agora. Tenta recarregar a página.
+          </p>
+        ) : (
+          <p
+            className={`mt-1 text-xs ${dadosOficiaisDesatualizados ? "text-amber-700 dark:text-amber-400" : "text-stone-500"}`}
+          >
+            {ultimaAtualizacaoOficial
+              ? `Dados oficiais da E-Redes atualizados ${tempoRelativo(ultimaAtualizacaoOficial)}`
+              : "Ainda sem dados oficiais da E-Redes sincronizados"}
+            {dadosOficiaisDesatualizados && " — pode estar desatualizado"}
+          </p>
+        )}
       </header>
 
-      {ativos.length > 0 && (
-        <ul className="flex flex-col gap-3">
-          {ativos.map((a) => (
-            <li
-              key={a.id}
-              className="rounded-xl border border-stone-200 p-4 dark:border-stone-800"
-            >
-              <p className="flex items-center gap-1.5 font-semibold text-stone-900 dark:text-stone-50">
-                {a.tipo_servico === "luz" ? (
-                  <Zap size={16} className="text-amber-500" aria-hidden />
-                ) : (
-                  <Droplet size={16} className="text-sky-500" aria-hidden />
-                )}
-                {a.tipo_servico === "luz" ? "Falta de luz" : "Falta de água"}
-                {a.freguesia ? ` — ${a.freguesia}` : ""}
-              </p>
-              {a.descricao && <p className="text-sm text-stone-600 dark:text-stone-400">{a.descricao}</p>}
-              <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
-                {a.origem === "oficial" ? (
-                  <ShieldCheck size={13} className="shrink-0" aria-hidden />
-                ) : (
-                  <Users size={13} className="shrink-0" aria-hidden />
-                )}
-                {a.origem === "oficial" ? "Oficial E-REDES" : "Comunidade"} · {tempoRelativo(a.criado_em)}
-                {a.origem === "comunidade" && ` · ${a.contador_votos} confirmações`}
-              </p>
-            </li>
-          ))}
-        </ul>
-      )}
+      {cartoes.length > 0 && <PesquisaConcelhos cartoes={cartoes} />}
 
-      {porConfirmar.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
-            Por confirmar
-          </h2>
-          <p className="-mt-2 text-xs text-stone-500">
-            Só um reporte até agora. Confirma se também estás sem isto para ajudar a validar.
-          </p>
-          <ul className="flex flex-col gap-3">
-            {porConfirmar.map((a) => (
-              <li key={a.id} className="rounded-xl border border-dashed border-stone-300 p-4 dark:border-stone-700">
-                <p className="flex items-center gap-1.5 font-semibold text-stone-900 dark:text-stone-50">
-                  {a.tipo_servico === "luz" ? (
-                    <Zap size={16} className="text-amber-500 opacity-60" aria-hidden />
-                  ) : (
-                    <Droplet size={16} className="text-sky-500 opacity-60" aria-hidden />
-                  )}
-                  {a.tipo_servico === "luz" ? "Falta de luz" : "Falta de água"}
-                  {a.freguesia ? ` — ${a.freguesia}` : ""}
-                </p>
-                {a.descricao && <p className="text-sm text-stone-600 dark:text-stone-400">{a.descricao}</p>}
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <p className="flex items-center gap-1 text-xs text-stone-500">
-                    <Users size={13} className="shrink-0" aria-hidden /> Comunidade · {tempoRelativo(a.criado_em)}
-                  </p>
-                  <BotaoConfirmar id={a.id} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {programados.length > 0 && (
+      {concelhosProgramados.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
             Programados nos próximos 7 dias
           </h2>
-          <ul className="flex flex-col gap-3">
-            {programados.map((a) => (
-              <li
-                key={a.id}
-                className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900 dark:bg-amber-950/30"
-              >
-                <p className="flex items-center gap-1.5 font-semibold text-stone-900 dark:text-stone-50">
-                  <Zap size={16} className="text-amber-500" aria-hidden />
-                  Corte programado{a.freguesia ? ` — ${a.freguesia}` : ""}
-                </p>
-                <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">
-                  {a.data_inicio && `Começa ${dataFormatada(a.data_inicio)}`}
-                  {a.data_fim && ` · termina ${dataFormatada(a.data_fim)}`}
-                </p>
-                <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
-                  <ShieldCheck size={13} className="shrink-0" aria-hidden /> Oficial E-REDES
-                  {a.zonas > 1 && ` · ${a.zonas} ruas/zonas afetadas`}
-                </p>
+          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            {concelhosProgramados.map((c) => (
+              <li key={c}>
+                <Link
+                  href={`/cortes/${paraSlug(c)}`}
+                  className="block rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-stone-700 hover:border-amber-400 dark:border-amber-900 dark:bg-amber-950/30 dark:text-stone-300"
+                >
+                  {c}
+                </Link>
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <section className="flex flex-col divide-y divide-stone-200 border-t border-stone-200 pt-2 dark:divide-stone-800 dark:border-stone-800">
-        {FAQ_CONCELHO.map((f) => (
-          <div key={f.pergunta} className="py-3">
-            <h2 className="text-sm font-semibold text-stone-800 dark:text-stone-200">{f.pergunta}</h2>
-            <p className="mt-1 text-sm text-stone-600 dark:text-stone-400">{f.resposta}</p>
-          </div>
-        ))}
-      </section>
-
-      <p className="flex flex-wrap gap-4 text-sm">
-        <Link href="/guias/falta-de-luz" className="font-semibold text-stone-700 underline dark:text-stone-300">
-          Guia: sem luz →
-        </Link>
-        <Link href="/guias/falta-de-agua" className="font-semibold text-stone-700 underline dark:text-stone-300">
-          Guia: sem água →
-        </Link>
-        <Link href="/faq" className="font-semibold text-stone-700 underline dark:text-stone-300">
-          Mais perguntas →
-        </Link>
-      </p>
+      {/* O mapa é um complemento visual à lista acima, não o conteúdo principal da página — fica
+          propositadamente mais pequeno e depois dos cartões (Bloco 4 do briefing). */}
+      <div className="flex flex-col items-center gap-2 border-t border-stone-200 pt-6 dark:border-stone-800">
+        <h2 className="self-start text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
+          Mapa por concelho
+        </h2>
+        <MapaConcelhosClient concelhosAtivos={concelhosAtivos} />
+        <p className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-stone-500">
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" /> Corte programado (E-Redes)
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-violet-400" /> Reportado pela comunidade
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full border border-stone-300 bg-stone-100" /> Sem alertas
+          </span>
+        </p>
+      </div>
 
       <Link
         href="/"
