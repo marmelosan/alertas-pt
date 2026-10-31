@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Zap, Droplet } from "lucide-react";
 import {
+  listarAlertasParaMapaConcelhos,
   listarCartoesConcelhos,
   listarConcelhosComAlertasAtivos,
   listarConcelhosComCortesProgramados,
   obterUltimaAtualizacaoOficial,
+  type AlertaMapaConcelho,
   type CartaoConcelho,
   type ConcelhosAtivosPorOrigem,
 } from "@/lib/alertas-server";
@@ -62,12 +65,14 @@ function tempoRelativo(iso: string): string {
 
 export default async function PaginaConcelhos() {
   let concelhosAtivos: ConcelhosAtivosPorOrigem = { oficial: [], comunidade: [] };
+  let pontosMapa: AlertaMapaConcelho[] = [];
   let cartoes: CartaoConcelho[] = [];
   let concelhosProgramados: string[] = [];
   let ultimaAtualizacaoOficial: string | null = null;
   let erroAoCarregar = false;
   try {
     concelhosAtivos = await listarConcelhosComAlertasAtivos();
+    pontosMapa = await listarAlertasParaMapaConcelhos();
     cartoes = await listarCartoesConcelhos();
     concelhosProgramados = (await listarConcelhosComCortesProgramados()).sort((a, b) => a.localeCompare(b, "pt"));
     ultimaAtualizacaoOficial = await obterUltimaAtualizacaoOficial();
@@ -134,16 +139,28 @@ export default async function PaginaConcelhos() {
         <h2 className="self-start text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
           Mapa por concelho
         </h2>
-        <MapaConcelhosClient concelhosAtivos={concelhosAtivos} />
+        <MapaConcelhosClient concelhosAtivos={concelhosAtivos} pontos={pontosMapa} />
         <p className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-stone-500">
           <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" /> Corte programado (E-Redes)
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-violet-400" /> Reportado pela comunidade
+            <span className="inline-block h-2.5 w-2.5 rounded-full border border-amber-600 bg-amber-300" /> Concelho com alertas
           </span>
           <span className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-full border border-stone-300 bg-stone-100" /> Sem alertas
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm border-2 border-stone-900 bg-stone-400 dark:border-stone-100" /> Oficial E-REDES
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-full border-2 border-white bg-stone-400 shadow" /> Comunidade
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-2.5 w-2.5 rounded-sm border border-dashed border-stone-500 bg-stone-400 opacity-60" /> Programado
+          </span>
+          <span className="flex items-center gap-1">
+            <Zap size={12} className="text-amber-500" aria-hidden /> Luz
+          </span>
+          <span className="flex items-center gap-1">
+            <Droplet size={12} className="text-sky-500" aria-hidden /> Água
           </span>
         </p>
       </div>
