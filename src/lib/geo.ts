@@ -99,7 +99,16 @@ export async function geocodificarCodigoPostal(
   url.searchParams.set("addressdetails", "1");
   url.searchParams.set("limit", "1");
 
-  const res = await fetch(url, { headers: { "Accept-Language": "pt-PT" } });
+  // Chamada do lado do servidor (job de sincronização): ao contrário do
+  // browser, o fetch do Node não manda um User-Agent identificável sozinho
+  // — e a política de uso da Nominatim rejeita com 403 qualquer pedido sem
+  // um. https://operations.osmfoundation.org/policies/nominatim/
+  const res = await fetch(url, {
+    headers: {
+      "Accept-Language": "pt-PT",
+      "User-Agent": `FoiAbaixo/1.0 (${process.env.NEXT_PUBLIC_SITE_URL ?? "https://foiabaixo.vercel.app"})`,
+    },
+  });
   if (!res.ok) throw new Error(`Nominatim devolveu ${res.status}`);
 
   const resultados = await res.json();
