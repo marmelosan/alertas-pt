@@ -60,6 +60,71 @@ body {
   animation: pulso-esqueleto 1.5s ease-in-out infinite;
 }
 
+/*
+ * Pins dos alertas (mapa da home e mapa por concelho — ver
+ * src/lib/icones-mapa.ts). Em CSS global em vez de inline no HTML do
+ * L.divIcon para os dois mapas ficarem sempre visualmente idênticos sem
+ * duplicar a folha de estilo.
+ */
+.marcador-alerta {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.marcador-alerta__corpo {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  background: var(--cor);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 2px 5px rgba(0, 0, 0, 0.35);
+}
+.marcador-alerta__corpo svg {
+  width: 8px;
+  height: 8px;
+  fill: #fff;
+}
+.marcador-alerta--comunidade .marcador-alerta__corpo {
+  border-radius: 999px;
+}
+/* Oficial fica com um anel duplo (branco + escuro) — um "crachá" a dizer
+   "isto é confirmado pela E-Redes", distinto do círculo mais discreto da
+   comunidade. */
+.marcador-alerta--oficial .marcador-alerta__corpo {
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 3.5px #1c1917,
+    0 2px 5px rgba(0, 0, 0, 0.4);
+}
+
+/* "Por confirmar" (Bloco 6): oco em vez de preenchido, contorno tracejado
+   na cor do serviço — só acontece em reportes da comunidade. */
+.marcador-alerta--por-confirmar .marcador-alerta__corpo {
+  background: #fff;
+  border: 2px dashed var(--cor);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+.marcador-alerta--por-confirmar .marcador-alerta__corpo svg {
+  fill: var(--cor);
+}
+
+/* Programado: mesmo crachá do oficial ativo, só esbatido e com contorno
+   tracejado — confirmado pela E-Redes, mas ainda não começou. */
+.marcador-alerta--programado .marcador-alerta__corpo {
+  opacity: 0.6;
+  border: 2px dashed #1c1917;
+  box-shadow: none;
+}
+
 /* Rotulo permanente com o nome do concelho no mapa por concelho. */
 .rotulo-concelho {
   background: rgba(255, 255, 255, 0.85);
