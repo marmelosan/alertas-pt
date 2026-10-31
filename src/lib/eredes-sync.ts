@@ -224,11 +224,27 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
     });
   }
 
+  const TAMANHO_LOTE = 50;
+
   const datasets = ["network-scheduling-work"];
   const preparados: AlertaOficialPreparado[] = [];
+  let lote: AlertaOficialPreparado[] = [];
   let processados = 0;
   let ignorados = 0;
   let inseridosOuAtualizados = 0;
+
+  async function gravarLote() {
+    if (lote.length === 0) return;
+    const { error, count } = await supabase
+      .from("alertas")
+      .upsert(lote, { onConflict: "external_id", count: "exact" });
+    if (error) {
+      console.warn(`[eredes-sync] não consegui gravar um lote de ${lote.length} alertas`, error);
+    } else {
+      inseridosOuAtualizados += count ?? lote.length;
+    }
+    lote = [];
+  }
 
   for (const datasetId of datasets) {
     const registos = await obterTodosOsRegistos(datasetId, { limiteTotal: 500 });
@@ -241,22 +257,18 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
         continue;
       }
       preparados.push(alerta);
+      lote.push(alerta);
 
-      // Grava logo, um a um, em vez de só no fim do ciclo inteiro — com
-      // muitos registos para geocodificar, a função pode ser cortada a
-      // meio pelo limite de 60s da Vercel antes de chegar ao fim; sem
-      // isto, todo o trabalho já feito (incluindo o que já estava em
-      // cache) perdia-se sempre, e nunca entrava nada na tabela alertas.
-      const { error: erroUpsert } = await supabase
-        .from("alertas")
-        .upsert(alerta, { onConflict: "external_id" });
-      if (erroUpsert) {
-        console.warn(`[eredes-sync] não consegui gravar o alerta "${alerta.external_id}"`, erroUpsert);
-      } else {
-        inseridosOuAtualizados++;
-      }
+      // Grava em lotes de TAMANHO_LOTE, em vez de um a um (demasiadas
+      // viagens de ida e volta à base de dados, mesmo sem nenhuma espera
+      // de geocodificação pelo meio já chega aos 60s de limite da
+      // Vercel com ~500 registos) nem só no fim do ciclo inteiro (perde-
+      // se tudo se a função for cortada a meio). Um lote se perdido é
+      // muito menos grave do que perder a sincronização toda.
+      if (lote.length >= TAMANHO_LOTE) await gravarLote();
     }
   }
+  await gravarLote();
 
   const idsAtuais = preparados.map((a) => a.external_id);
   const { data: resolvidos, error: erroResolver } = await supabase
