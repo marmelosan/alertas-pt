@@ -46,16 +46,21 @@ const CORES: Record<TipoServico, string> = {
 
 function criarIcone(tipo: TipoServico, origem: Alerta["origem"], porConfirmar: boolean) {
   const cor = CORES[tipo];
-  // origem oficial = quadrado; comunidade = círculo — distinção visual rápida no mapa
+  // origem oficial = quadrado; comunidade = círculo — distinção visual rápida no mapa.
+  // A forma sozinha é um sinal fraco a 18px (um quadrado arredondado e um
+  // círculo ficam parecidos de relance); o contorno reforça-a com um
+  // segundo sinal independente: oficial tem contorno escuro grosso,
+  // comunidade mantém o branco fino de sempre.
   const forma =
     origem === "oficial"
       ? `width:14px;height:14px;border-radius:3px;`
       : `width:16px;height:16px;border-radius:50%;`;
+  const contorno = origem === "oficial" ? "3px solid #1c1917" : "2px solid white";
   // "por confirmar" (Bloco 6): preenchimento oco + contorno tracejado, em vez
   // de sólido — sinaliza visualmente que ainda não é uma falha confirmada.
   const estilo = porConfirmar
     ? `${forma}background:white;border:2px dashed ${cor};opacity:0.85;`
-    : `${forma}background:${cor};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.4);`;
+    : `${forma}background:${cor};border:${contorno};box-shadow:0 1px 4px rgba(0,0,0,.4);`;
 
   return L.divIcon({
     className: "",
