@@ -27,8 +27,11 @@ const COR_SEM_ALERTAS = "#f4f4f5";
 const COR_SEM_ALERTAS_LINHA = "#d4d4d8";
 
 // A partir deste zoom há poucos concelhos visíveis de cada vez, por isso dá
-// para escrever o nome de cada um sem o mapa ficar ilegível de texto.
-const ZOOM_MOSTRA_ROTULOS = 9;
+// para escrever o nome de cada um sem o mapa ficar ilegível de texto. Em
+// zonas densas (área metropolitana de Lisboa, por exemplo) muitos concelhos
+// pequenos ficam lado a lado — por isso o limiar é alto, só liga os rótulos
+// permanentes quando já restam mesmo poucos à vista.
+const ZOOM_MOSTRA_ROTULOS = 11;
 
 interface ConcelhoProperties {
   con_name: string;
@@ -67,7 +70,7 @@ export function MapaConcelhos({ concelhosAtivos }: { concelhosAtivos: ConcelhosA
 
   if (!geojson) {
     return (
-      <div className="mx-auto flex h-[300px] w-[160px] items-center justify-center text-sm text-stone-500 sm:h-[380px] sm:w-[205px] lg:h-[440px] lg:w-[235px]">
+      <div className="mx-auto flex h-[480px] w-[260px] items-center justify-center text-sm text-stone-500 sm:h-[600px] sm:w-[325px] lg:h-[700px] lg:w-[380px]">
         A carregar o mapa de concelhos…
       </div>
     );
@@ -99,7 +102,7 @@ export function MapaConcelhos({ concelhosAtivos }: { concelhosAtivos: ConcelhosA
   };
 
   return (
-    <div className="mx-auto h-[300px] w-[160px] overflow-hidden rounded-lg border border-stone-200 sm:h-[380px] sm:w-[205px] lg:h-[440px] lg:w-[235px] dark:border-stone-800">
+    <div className="mx-auto h-[480px] w-[260px] overflow-hidden rounded-lg border border-stone-200 sm:h-[600px] sm:w-[325px] lg:h-[700px] lg:w-[380px] dark:border-stone-800">
       <MapContainer
         bounds={LIMITES_PORTUGAL}
         maxBounds={LIMITES_MAXIMOS}
