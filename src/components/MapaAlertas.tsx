@@ -16,7 +16,7 @@ import {
   type EstadoServico,
 } from "@/lib/alertas";
 import { processarFila } from "@/lib/fila-offline";
-import { estaPorConfirmar } from "@/lib/estado-alerta";
+import { estaPorConfirmar, estaProgramadoHoje } from "@/lib/estado-alerta";
 import { criarIconeAlerta, type EstadoVisualMarcador } from "@/lib/icones-mapa";
 import { tempoRelativo, formatarDataHora } from "@/lib/tempo";
 import {
@@ -192,10 +192,16 @@ export function MapaAlertas() {
     [alertas, filtro]
   );
 
-  const programadosVisiveis = useMemo(
-    () => (filtro === "todos" ? programados : programados.filter((a) => a.tipo_servico === filtro)),
-    [programados, filtro]
-  );
+  // Só os programados de HOJE ganham pin no mapa da home — os de outros
+  // dias já estão todos em /cortes ("alertas programados"), e põe-los
+  // também aqui só sobrecarregava o mapa principal com coisas que só vão
+  // acontecer daqui a uma ou duas semanas. O aviso em baixo (com o link
+  // para /cortes) continua a avisar do panorama completo.
+  const programadosVisiveis = useMemo(() => {
+    const agora = new Date();
+    const deHoje = programados.filter((a) => estaProgramadoHoje(a, agora));
+    return filtro === "todos" ? deHoje : deHoje.filter((a) => a.tipo_servico === filtro);
+  }, [programados, filtro]);
 
   // Os dois juntos, cada um já rotulado com o estado que decide o visual
   // (ícone + conteúdo do popup) — evita recalcular "por confirmar" em

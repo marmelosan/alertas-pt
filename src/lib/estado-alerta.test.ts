@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularEstado, estaAtivo, estaPorConfirmar, estaProgramado, estaVisivelAgora } from "./estado-alerta";
+import { calcularEstado, estaAtivo, estaPorConfirmar, estaProgramado, estaProgramadoHoje, estaVisivelAgora } from "./estado-alerta";
 import type { Alerta } from "@/types/alerta";
 
 // contador_votos=2 por omissão nos testes que não são sobre confirmações —
@@ -131,5 +131,21 @@ describe("calcularEstado — cortes oficiais (E-Redes)", () => {
       data_fim: "2026-02-15T02:00:00Z",
     });
     expect(estaProgramado(daquiA45Dias, agora)).toBe(true);
+  });
+
+  it("estaProgramadoHoje só conta o que começa ainda hoje, não amanhã", () => {
+    const agora = new Date("2026-01-01T10:00:00Z");
+    const aindaHoje = alertaBase({
+      origem: "oficial",
+      data_inicio: "2026-01-01T18:00:00Z",
+      data_fim: "2026-01-01T20:00:00Z",
+    });
+    const amanha = alertaBase({
+      origem: "oficial",
+      data_inicio: "2026-01-02T01:00:00Z",
+      data_fim: "2026-01-02T03:00:00Z",
+    });
+    expect(estaProgramadoHoje(aindaHoje, agora)).toBe(true);
+    expect(estaProgramadoHoje(amanha, agora)).toBe(false);
   });
 });

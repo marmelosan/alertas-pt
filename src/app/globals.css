@@ -117,12 +117,15 @@ body {
   fill: var(--cor);
 }
 
-/* Programado: mesmo crachá do oficial ativo, só esbatido e com contorno
-   tracejado — confirmado pela E-Redes, mas ainda não começou. */
+/* Programado: mesmo crachá sólido do oficial ativo (sem esbater — esbatido
+   parecia um pin "avariado", não "agendado"), só com o anel exterior na cor
+   do serviço em vez de escuro. Anel escuro = "agora" (mais urgente); anel
+   na cor = "mais tarde hoje" (confirmado, mas sem a mesma urgência). */
 .marcador-alerta--programado .marcador-alerta__corpo {
-  opacity: 0.6;
-  border: 2px dashed #1c1917;
-  box-shadow: none;
+  border: 2.5px solid #fff;
+  box-shadow:
+    0 0 0 2.5px var(--cor),
+    0 2px 5px rgba(0, 0, 0, 0.3);
 }
 
 /* Rotulo permanente com o nome do concelho no mapa por concelho. */

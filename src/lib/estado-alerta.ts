@@ -71,3 +71,17 @@ export function estaVisivelAgora(alerta: Alerta, agora: Date = new Date()): bool
 export function estaProgramado(alerta: Alerta, agora: Date = new Date()): boolean {
   return calcularEstado(alerta, agora) === "programado";
 }
+
+/**
+ * Programado com início ainda hoje (até às 23:59:59 de hoje). Usado para
+ * restringir o mapa interativo da home a alertas do dia — os cortes
+ * programados para outros dias continuam a aparecer na íntegra em
+ * /cortes, mas não poluem o mapa principal com pins de coisas que só vão
+ * acontecer daqui a uma ou duas semanas.
+ */
+export function estaProgramadoHoje(alerta: Alerta, agora: Date = new Date()): boolean {
+  if (!estaProgramado(alerta, agora) || !alerta.data_inicio) return false;
+  const fimDoDia = new Date(agora);
+  fimDoDia.setHours(23, 59, 59, 999);
+  return new Date(alerta.data_inicio) <= fimDoDia;
+}

@@ -1,7 +1,7 @@
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { obterClientId } from "@/lib/client-id";
 import { adicionarAFila } from "@/lib/fila-offline";
-import { calcularEstado, estaProgramado, estaVisivelAgora } from "@/lib/estado-alerta";
+import { calcularEstado, estaProgramado, estaProgramadoHoje, estaVisivelAgora } from "@/lib/estado-alerta";
 import type { Alerta, NovoAlerta } from "@/types/alerta";
 
 export type ResultadoReporte = { tipo: "enviado"; alerta: Alerta } | { tipo: "offline" };
@@ -68,8 +68,6 @@ export async function obterEstadoServico(): Promise<EstadoServico> {
   if (error) throw error;
 
   const agora = new Date();
-  const fimDoDia = new Date(agora);
-  fimDoDia.setHours(23, 59, 59, 999);
 
   let ativos = 0;
   let programadosHoje = 0;
@@ -78,9 +76,7 @@ export async function obterEstadoServico(): Promise<EstadoServico> {
   for (const alerta of data ?? []) {
     const estado = calcularEstado(alerta, agora);
     if (estado === "ativo") ativos++;
-    if (estado === "programado" && alerta.data_inicio && new Date(alerta.data_inicio) <= fimDoDia) {
-      programadosHoje++;
-    }
+    if (estaProgramadoHoje(alerta, agora)) programadosHoje++;
     if (alerta.origem === "oficial" && (!ultimaAtualizacaoOficial || alerta.atualizado_em > ultimaAtualizacaoOficial)) {
       ultimaAtualizacaoOficial = alerta.atualizado_em;
     }
