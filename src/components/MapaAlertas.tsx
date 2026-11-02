@@ -525,7 +525,7 @@ export function MapaAlertas() {
           bounds={LIMITES_PORTUGAL}
           maxBounds={LIMITES_MAXIMOS}
           maxBoundsViscosity={0.8}
-          minZoom={8}
+          minZoom={7}
           zoomControl={false}
           className="absolute inset-0 mapa-base-neutro"
         >
@@ -537,12 +537,14 @@ export function MapaAlertas() {
             Canto inferior direito em vez do padrão (superior esquerdo) — ali
             ficava mesmo por cima de onde costumam estar pins/zona que se
             quer ler, especialmente no telemóvel onde o mapa tem menos
-            margem. minZoom subiu de 7 para 8: com o mapa cheio de largura em
-            ecrã grande, o ajuste automático ao contorno de Portugal
-            (`bounds`) tendia a mostrar bastante de Espanha/oceano dos lados
-            para caber a forma estreita e alta do país; um zoom mínimo mais
-            alto corta mais a abrir, à custa de ver um pouco menos de
-            norte/sul de início (dá para ver com "Portugal todo").
+            margem.
+
+            (O minZoom tinha subido de 7 para 8 para mostrar menos
+            Espanha/oceano, mas isso força o zoom inicial a ficar mais
+            apertado do que o fitBounds calcula para caber o contorno de
+            Portugal — corta pontas do país e esconde reportes perto da
+            margem. Revertido para 7; qualquer ajuste ao enquadramento
+            fica para depois, feito com mais cuidado.)
           */}
           <ZoomControl position="bottomright" />
 

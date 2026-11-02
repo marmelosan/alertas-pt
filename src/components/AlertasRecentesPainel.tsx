@@ -83,7 +83,8 @@ export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?
                   aria-hidden
                 />
                 <span className="flex-1 truncate text-stone-700 dark:text-stone-300">
-                  {a.freguesia ?? a.concelho}
+                  {a.concelho}
+                  {a.freguesia ? ` — ${a.freguesia}` : ""}
                 </span>
                 {porConfirmar ? (
                   <span className="shrink-0 rounded-full bg-stone-100 px-2 py-0.5 text-xs font-medium text-stone-500 dark:bg-stone-800 dark:text-stone-400">
