@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, GeoJSON, Marker, Popup, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, GeoJSON, Marker, Popup, ZoomControl, useMapEvents } from "react-leaflet";
 import type { Layer, Path, PathOptions } from "leaflet";
 import type { Feature, FeatureCollection, Geometry } from "geojson";
 import "leaflet/dist/leaflet.css";
@@ -132,11 +132,13 @@ export function MapaConcelhos({
         maxZoom={13}
         className="h-full w-full mapa-base-neutro"
         scrollWheelZoom={false}
+        zoomControl={false}
       >
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         />
+        <ZoomControl position="bottomright" />
         <GeoJSON data={geojson} style={estilo} onEachFeature={aoAdicionarFeature} />
 
         {/* Pins no sítio exato de cada alerta, mesmo visual do mapa da

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, ZoomControl, useMap, useMapEvents } from "react-leaflet";
 import { MapPin, Map as MapIcon, MousePointerClick, CheckCircle2, X, Loader2, Zap, Droplet, Share2, Check, WifiOff, ShieldCheck, Users, Clock, ChevronDown, Search } from "lucide-react";
 import Link from "next/link";
 import "leaflet/dist/leaflet.css";
@@ -525,13 +525,26 @@ export function MapaAlertas() {
           bounds={LIMITES_PORTUGAL}
           maxBounds={LIMITES_MAXIMOS}
           maxBoundsViscosity={0.8}
-          minZoom={7}
+          minZoom={8}
+          zoomControl={false}
           className="absolute inset-0 mapa-base-neutro"
         >
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {/*
+            Canto inferior direito em vez do padrão (superior esquerdo) — ali
+            ficava mesmo por cima de onde costumam estar pins/zona que se
+            quer ler, especialmente no telemóvel onde o mapa tem menos
+            margem. minZoom subiu de 7 para 8: com o mapa cheio de largura em
+            ecrã grande, o ajuste automático ao contorno de Portugal
+            (`bounds`) tendia a mostrar bastante de Espanha/oceano dos lados
+            para caber a forma estreita e alta do país; um zoom mínimo mais
+            alto corta mais a abrir, à custa de ver um pouco menos de
+            norte/sul de início (dá para ver com "Portugal todo").
+          */}
+          <ZoomControl position="bottomright" />
 
           <CapturarCliques
             ativo={!pontoPendente}
