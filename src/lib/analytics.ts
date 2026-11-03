@@ -1,10 +1,6 @@
 import type { TipoServico } from "@/types/alerta";
 
-declare global {
-  interface Window {
-    dataLayer: unknown[];
-  }
-}
+// window.dataLayer já vem tipado pelo @next/third-parties/google.
 
 /** Empurra sempre para o dataLayer — o GTM decide se dispara alguma tag, consoante o consentimento. */
 export function registarEvento(evento: string, parametros: Record<string, unknown> = {}) {

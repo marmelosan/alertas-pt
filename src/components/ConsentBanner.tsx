@@ -2,15 +2,20 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 
-declare global {
-  interface Window {
-    dataLayer: unknown[];
-  }
-}
+// window.dataLayer já vem tipado pelo @next/third-parties/google.
 
+// `...args` é só para o TypeScript validar as chamadas — o que é
+// empurrado para o dataLayer tem de ser mesmo o objeto `arguments` em
+// bruto, não um array (mesmo com o mesmo conteúdo), porque é o formato
+// que o gtag.js/GTM espera para reconhecer isto como uma chamada
+// gtag('consent', ...) e processá-la. É literalmente o padrão que a
+// própria Google documenta para sites com GTM que chamam
+// gtag('consent', ...) sem o gtag.js carregado.
 function gtag(...args: unknown[]) {
+  void args;
   window.dataLayer = window.dataLayer || [];
-  window.dataLayer.push(args);
+  // eslint-disable-next-line prefer-rest-params
+  window.dataLayer.push(arguments);
 }
 
 const CHAVE = "alertas-pt:cookie-consent";
