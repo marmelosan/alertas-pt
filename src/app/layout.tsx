@@ -4,12 +4,20 @@ import Script from "next/script";
 import "./globals.css";
 import { GtmNoscript } from "@/components/ConsentDefaults";
 import { ConsentBanner } from "@/components/ConsentBanner";
-import { AvisoNovaVersao } from "@/components/AvisoNovaVersao";
 import { RegistarServiceWorker } from "@/components/RegistarServiceWorker";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
 
 const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID;
+
+// Público, não sensível (visível em qualquer página carregada) — por isso
+// fica fixo no código em vez de precisar de mais uma variável de ambiente
+// e outro redeploy. Serve só para a Google reconhecer a instalação da
+// etiqueta GA4 diretamente (o verificador "Configure uma etiqueta Google"
+// procura especificamente por este script, não reconhece instalações só
+// via GTM) — os eventos reais continuam todos a vir do GTM, por isso
+// send_page_view fica a false aqui para não contar visualizações a dobrar.
+const GA4_MEASUREMENT_ID = "G-5LMRRR76QR";
 
 const inter = Inter({
   variable: "--font-inter",
@@ -89,12 +97,26 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
                 })(window,document,'script','dataLayer','${GTM_ID}');
               `}
             </Script>
+            {/* Etiqueta GA4 direta, só para o verificador de instalação da
+                Google reconhecer a etiqueta (ver nota em GA4_MEASUREMENT_ID
+                acima) — send_page_view=false para o GTM continuar a ser a
+                única fonte de eventos reais. */}
+            <Script
+              async
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA4_MEASUREMENT_ID}`}
+              strategy="beforeInteractive"
+            />
+            <Script id="gtag-config" strategy="beforeInteractive">
+              {`
+                gtag('js', new Date());
+                gtag('config', '${GA4_MEASUREMENT_ID}', { send_page_view: false });
+              `}
+            </Script>
           </>
         )}
       </head>
       <body className="min-h-full flex flex-col">
         <GtmNoscript />
-        <AvisoNovaVersao />
         <RegistarServiceWorker />
         <SiteNav />
         {children}
