@@ -4,6 +4,7 @@ import Script from "next/script";
 import "./globals.css";
 import { GtmNoscript } from "@/components/ConsentDefaults";
 import { ConsentBanner } from "@/components/ConsentBanner";
+import { AvisoNovaVersao } from "@/components/AvisoNovaVersao";
 import { RegistarServiceWorker } from "@/components/RegistarServiceWorker";
 import { SiteNav } from "@/components/SiteNav";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -93,6 +94,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       </head>
       <body className="min-h-full flex flex-col">
         <GtmNoscript />
+        <AvisoNovaVersao />
         <RegistarServiceWorker />
         <SiteNav />
         {children}
