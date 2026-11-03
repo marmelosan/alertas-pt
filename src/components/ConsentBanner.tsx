@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 declare global {
   interface Window {
@@ -19,7 +19,6 @@ const CHAVE = "alertas-pt:cookie-consent";
 export const EVENTO_REABRIR_PREFERENCIAS = "abrir-preferencias-cookies";
 
 function lerEscolhaGuardada(): string | null {
-  if (typeof window === "undefined") return null;
   try {
     return localStorage.getItem(CHAVE);
   } catch {
@@ -27,17 +26,34 @@ function lerEscolhaGuardada(): string | null {
   }
 }
 
+function nenhumaEscolhaNoServidor(): null {
+  return null; // não existe localStorage no servidor
+}
+
+function assinarAlteracoesDoStorage(callback: () => void) {
+  window.addEventListener("storage", callback);
+  return () => window.removeEventListener("storage", callback);
+}
+
 export function ConsentBanner() {
   const gtmAtivo = Boolean(process.env.NEXT_PUBLIC_GTM_ID);
-  // Lido uma vez, de forma síncrona, no estado inicial — não precisa de
-  // efeito nenhum para decidir se o banner aparece.
-  const [visivel, setVisivel] = useState(
-    () => gtmAtivo && !["granted", "denied"].includes(lerEscolhaGuardada() ?? "")
-  );
+
+  // useSyncExternalStore (em vez de ler o localStorage direto num useState
+  // inicial) é o que garante que o servidor e a primeira passagem do
+  // cliente veem sempre o mesmo valor (null, via getServerSnapshot) — ler
+  // o localStorage logo ao início fazia o servidor e o cliente calcularem
+  // visibilidades diferentes assim que já houvesse uma escolha guardada, o
+  // que quebrava a hidratação do React nesse componente: o banner ficava
+  // preso no ecrã tal como o servidor o desenhou, sem o React alguma vez
+  // ligar os onClick por cima — parecia bloqueado, sem erro nenhum na
+  // consola, e acontecia em qualquer browser (Chrome e Firefox incluídos).
+  const escolhaGuardada = useSyncExternalStore(assinarAlteracoesDoStorage, lerEscolhaGuardada, nenhumaEscolhaNoServidor);
+
+  const [fechado, setFechado] = useState(false);
+  const [reaberto, setReaberto] = useState(false);
 
   useEffect(() => {
-    // Efeito só para sincronizar com o sistema externo (gtag) — não mexe em estado local.
-    if (gtmAtivo && lerEscolhaGuardada() === "granted") {
+    if (gtmAtivo && escolhaGuardada === "granted") {
       gtag("consent", "update", {
         ad_storage: "denied", // nunca usamos ads — só analytics
         analytics_storage: "granted",
@@ -45,14 +61,15 @@ export function ConsentBanner() {
         ad_personalization: "denied",
       });
     }
-  }, [gtmAtivo]);
+  }, [gtmAtivo, escolhaGuardada]);
 
   // "Preferências de cookies" no rodapé/Privacidade reabre o aviso, para
   // quem queira mudar de ideias depois de já ter escolhido.
   useEffect(() => {
     if (!gtmAtivo) return;
     function reabrir() {
-      setVisivel(true);
+      setFechado(false);
+      setReaberto(true);
     }
     window.addEventListener(EVENTO_REABRIR_PREFERENCIAS, reabrir);
     return () => window.removeEventListener(EVENTO_REABRIR_PREFERENCIAS, reabrir);
@@ -68,7 +85,7 @@ export function ConsentBanner() {
     try {
       localStorage.setItem(CHAVE, "granted");
     } catch {}
-    setVisivel(false);
+    setFechado(true);
   }
 
   function rejeitar() {
@@ -81,8 +98,11 @@ export function ConsentBanner() {
     try {
       localStorage.setItem(CHAVE, "denied");
     } catch {}
-    setVisivel(false);
+    setFechado(true);
   }
+
+  const semEscolhaAinda = !["granted", "denied"].includes(escolhaGuardada ?? "");
+  const visivel = gtmAtivo && !fechado && (semEscolhaAinda || reaberto);
 
   if (!visivel) return null;
 
