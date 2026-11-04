@@ -136,3 +136,13 @@ export async function denunciarAlerta(id: string): Promise<Alerta> {
   if (error) throw error;
   return data;
 }
+
+/** Bloco 14, Passo 2: "Já voltou?" — precisa de 2 votos independentes para fechar o alerta, igual à confirmação de "ativo". */
+export async function marcarResolvidoAlerta(id: string): Promise<Alerta> {
+  const { data, error } = await supabaseBrowser.rpc("marcar_resolvido_alerta", {
+    alerta_id: id,
+  });
+
+  if (error) throw error;
+  return data;
+}

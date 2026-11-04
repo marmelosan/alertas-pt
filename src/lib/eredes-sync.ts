@@ -188,6 +188,55 @@ async function prepararAlerta(
   };
 }
 
+interface AlertaExistenteResumo {
+  id: string;
+  external_id: string;
+  data_inicio: string | null;
+  data_fim: string | null;
+}
+
+/**
+ * Bloco 14, Passo 3 — antes de um upsert, compara data_inicio/data_fim com o
+ * que já estava gravado e regista em `alertas_historico` o que mudou (ex.: a
+ * E-Redes adiou um corte 1h). Só compara pelo valor do instante (não a
+ * string), para não gerar "correções" falsas só por diferenças de formato
+ * entre o que a BD devolve e o que acabámos de calcular com toISOString().
+ * Ignora registos novos (sem linha existente) e campos que só passaram de
+ * nulo para preenchido — isso é informação a chegar, não uma correção.
+ */
+async function registarAlteracoes(supabase: SupabaseServiceClient, lote: AlertaOficialPreparado[]): Promise<void> {
+  const { data: existentes, error } = await supabase
+    .from("alertas")
+    .select("id, external_id, data_inicio, data_fim")
+    .in("external_id", lote.map((a) => a.external_id));
+  if (error) {
+    console.warn("[eredes-sync] não consegui verificar alterações de horário antes do upsert", error);
+    return;
+  }
+
+  const porExternalId = new Map((existentes as AlertaExistenteResumo[] | null ?? []).map((e) => [e.external_id, e]));
+  const entradas: { alerta_id: string; campo: string; valor_anterior: string; valor_novo: string }[] = [];
+
+  for (const alerta of lote) {
+    const existente = porExternalId.get(alerta.external_id);
+    if (!existente) continue;
+    for (const campo of ["data_inicio", "data_fim"] as const) {
+      const anterior = existente[campo];
+      const novo = alerta[campo];
+      if (!anterior || !novo) continue;
+      if (new Date(anterior).getTime() !== new Date(novo).getTime()) {
+        entradas.push({ alerta_id: existente.id, campo, valor_anterior: anterior, valor_novo: novo });
+      }
+    }
+  }
+
+  if (entradas.length === 0) return;
+  const { error: erroHistorico } = await supabase.from("alertas_historico").insert(entradas);
+  if (erroHistorico) {
+    console.warn("[eredes-sync] não consegui gravar histórico de alterações", erroHistorico);
+  }
+}
+
 export interface ResultadoSincronizacao {
   processados: number;
   inseridosOuAtualizados: number;
@@ -235,6 +284,7 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
 
   async function gravarLote() {
     if (lote.length === 0) return;
+    await registarAlteracoes(supabase, lote);
     const { error, count } = await supabase
       .from("alertas")
       .upsert(lote, { onConflict: "external_id", count: "exact" });

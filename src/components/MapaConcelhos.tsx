@@ -7,10 +7,11 @@ import type { Feature, FeatureCollection, Geometry } from "geojson";
 import "leaflet/dist/leaflet.css";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Zap, Droplet, ShieldCheck, Users, Clock } from "lucide-react";
+import { Zap, Droplet, ShieldCheck, Users, Clock, CheckCircle2 } from "lucide-react";
 import { paraSlug } from "@/lib/slug";
 import { criarIconeAlerta } from "@/lib/icones-mapa";
 import { formatarDataHora } from "@/lib/tempo";
+import { LINK_FONTE_EREDES, NOME_FONTE_EREDES } from "@/lib/fontes";
 import { registarAberturaMarcador } from "@/lib/analytics";
 import type { AlertaMapaConcelho, ConcelhosAtivosPorOrigem } from "@/lib/alertas-server";
 
@@ -169,6 +170,11 @@ export function MapaConcelhos({
                       <Clock size={10} aria-hidden /> Programado
                     </span>
                   )}
+                  {ponto.origem === "comunidade" && ponto.estadoVisual === "ativo" && (
+                    <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800 dark:bg-green-900 dark:text-green-200">
+                      <CheckCircle2 size={10} aria-hidden /> Confirmado
+                    </span>
+                  )}
                 </strong>
                 <span>
                   {ponto.concelho}
@@ -180,7 +186,13 @@ export function MapaConcelhos({
                   ) : (
                     <Users size={13} className="shrink-0" aria-hidden />
                   )}
-                  {ponto.origem === "oficial" ? "Oficial E-REDES" : "Comunidade"}
+                  {ponto.origem === "oficial" ? (
+                    <Link href={LINK_FONTE_EREDES} target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-700 dark:hover:text-stone-300">
+                      {NOME_FONTE_EREDES}
+                    </Link>
+                  ) : (
+                    "Comunidade"
+                  )}
                   {ponto.estadoVisual === "programado" && ponto.data_inicio && ` · começa ${formatarDataHora(ponto.data_inicio)}`}
                 </span>
                 <Link

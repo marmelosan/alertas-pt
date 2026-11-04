@@ -185,3 +185,30 @@ export const listarAlertasDoConcelho = cache(async (concelho: string): Promise<A
   if (error) throw error;
   return data ?? [];
 });
+
+export interface HistoricoAlerta {
+  alerta_id: string;
+  campo: string;
+  valor_anterior: string | null;
+  valor_novo: string | null;
+  criado_em: string;
+}
+
+/**
+ * Bloco 14, Passo 3 — alterações visíveis (ex.: "horário alterado de
+ * 9h–13h para 9h–14h"), gravadas em eredes-sync.ts quando um corte oficial
+ * já existente muda de data. Não envolto em cache() de propósito: recebe
+ * a lista de ids já carregada pela página, que muda a cada render — não
+ * há nada a deduplicar.
+ */
+export async function listarHistoricoDosAlertas(alertaIds: string[]): Promise<HistoricoAlerta[]> {
+  if (alertaIds.length === 0) return [];
+  const { data, error } = await supabaseBrowser
+    .from("alertas_historico")
+    .select("alerta_id, campo, valor_anterior, valor_novo, criado_em")
+    .in("alerta_id", alertaIds)
+    .order("criado_em", { ascending: false });
+
+  if (error) throw error;
+  return data ?? [];
+}

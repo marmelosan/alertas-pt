@@ -21,6 +21,9 @@ export interface Alerta {
   /** Só para origem="oficial" — início/fim do corte programado (E-Redes). Nulo para comunidade. */
   data_inicio: string | null;
   data_fim: string | null;
+  /** Bloco 14: votos em "Já voltou?" (só comunidade) e quando passou a resolvido de verdade. */
+  contador_resolvido_votos: number;
+  resolvido_em: string | null;
 }
 
 export type NovoAlerta = Pick<

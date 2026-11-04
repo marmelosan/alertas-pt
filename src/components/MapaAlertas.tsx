@@ -9,6 +9,7 @@ import type { Alerta, TipoServico } from "@/types/alerta";
 import {
   confirmarAlerta,
   denunciarAlerta,
+  marcarResolvidoAlerta,
   listarAlertasAtivos,
   listarCortesProgramados,
   obterEstadoServico,
@@ -19,6 +20,7 @@ import { processarFila } from "@/lib/fila-offline";
 import { estaPorConfirmar, estaProgramadoHoje } from "@/lib/estado-alerta";
 import { criarIconeAlerta, type EstadoVisualMarcador } from "@/lib/icones-mapa";
 import { tempoRelativo, formatarDataHora } from "@/lib/tempo";
+import { LINK_FONTE_EREDES, NOME_FONTE_EREDES } from "@/lib/fontes";
 import {
   registarEvento,
   registarInicioReporte,
@@ -244,6 +246,17 @@ export function MapaAlertas() {
       registarEvento("alerta_denunciado", { tipo_servico: atualizado.tipo_servico });
     } catch {
       setErro("Não consegui registar a denúncia.");
+    }
+  }
+
+  /** Bloco 14, Passo 2 — "Já voltou?": 2 votos independentes fecham o alerta e guardam a duração real. */
+  async function marcarJaVoltou(id: string) {
+    try {
+      const atualizado = await marcarResolvidoAlerta(id);
+      setAlertas((prev) => prev.map((a) => (a.id === id ? atualizado : a)));
+      registarEvento("alerta_ja_voltou", { tipo_servico: atualizado.tipo_servico });
+    } catch {
+      setErro("Não consegui registar isso.");
     }
   }
 
@@ -563,6 +576,11 @@ export function MapaAlertas() {
           {marcadores.map((alerta) => {
             const porConfirmar = alerta.estadoVisual === "por_confirmar";
             const programado = alerta.estadoVisual === "programado";
+            // Bloco 14, Passo 1: distingue visualmente um reporte já confirmado
+            // (2+ votos independentes) de "por confirmar" — antes mostravam-se
+            // exatamente da mesma forma, só o número de confirmações na linha
+            // de baixo dizia a diferença.
+            const confirmado = alerta.origem === "comunidade" && !porConfirmar && !programado;
             const servico = alerta.tipo_servico === "luz" ? "Falta de luz" : "Falta de água";
             const estadoLabel = porConfirmar
               ? "por confirmar"
@@ -607,6 +625,11 @@ export function MapaAlertas() {
                         <Clock size={10} aria-hidden /> Programado
                       </span>
                     )}
+                    {confirmado && (
+                      <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800 dark:bg-green-900 dark:text-green-200">
+                        <CheckCircle2 size={10} aria-hidden /> Confirmado
+                      </span>
+                    )}
                   </strong>
                   <span>
                     {alerta.concelho}
@@ -619,10 +642,17 @@ export function MapaAlertas() {
                     ) : (
                       <Users size={13} className="shrink-0" aria-hidden />
                     )}
-                    {alerta.origem === "oficial" ? "Oficial E-REDES" : "Comunidade"} ·{" "}
+                    {alerta.origem === "oficial" ? (
+                      <Link href={LINK_FONTE_EREDES} target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-700 dark:hover:text-stone-300">
+                        {NOME_FONTE_EREDES}
+                      </Link>
+                    ) : (
+                      "Comunidade"
+                    )}{" "}
+                    ·{" "}
                     {programado && alerta.data_inicio
                       ? `começa ${formatarDataHora(alerta.data_inicio)}`
-                      : tempoRelativo(alerta.criado_em)}
+                      : `verificado ${tempoRelativo(alerta.atualizado_em)}`}
                     {alerta.origem === "comunidade" && ` · ${alerta.contador_votos} confirmações`}
                   </span>
                   {alerta.origem === "comunidade" && (
@@ -632,7 +662,7 @@ export function MapaAlertas() {
                           Precisa de mais 1 confirmação independente para contar como falha ativa.
                         </p>
                       )}
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={() => confirmar(alerta.id)}
@@ -640,6 +670,15 @@ export function MapaAlertas() {
                         >
                           Eu também estou sem isto
                         </button>
+                        {confirmado && (
+                          <button
+                            type="button"
+                            onClick={() => marcarJaVoltou(alerta.id)}
+                            className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs font-semibold text-stone-700 dark:border-stone-700 dark:text-stone-300"
+                          >
+                            Já voltou?
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => denunciar(alerta.id)}

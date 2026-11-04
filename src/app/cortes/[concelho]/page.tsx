@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { obterConcelhoPorSlug, listarAlertasDoConcelho } from "@/lib/alertas-server";
+import { obterConcelhoPorSlug, listarAlertasDoConcelho, listarHistoricoDosAlertas } from "@/lib/alertas-server";
+import type { HistoricoAlerta } from "@/lib/alertas-server";
 import { estaAtivo, estaPorConfirmar, estaProgramado } from "@/lib/estado-alerta";
+import { formatarDuracao } from "@/lib/tempo";
+import { LINK_FONTE_EREDES, NOME_FONTE_EREDES } from "@/lib/fontes";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { BotaoConfirmar } from "@/components/BotaoConfirmar";
-import { Zap, Droplet, ShieldCheck, Users } from "lucide-react";
+import { BotaoJaVoltou } from "@/components/BotaoJaVoltou";
+import { Zap, Droplet, ShieldCheck, Users, CheckCircle2 } from "lucide-react";
 import { RegistarVistaConcelho } from "@/components/RegistarVistaConcelho";
 import type { Alerta } from "@/types/alerta";
 
@@ -66,6 +70,8 @@ function dataFormatada(iso: string): string {
 interface CorteProgramadoAgrupado extends Alerta {
   /** Quantas ruas/zonas diferentes a E-Redes listou para esta mesma janela — 1 = sem agrupamento. */
   zonas: number;
+  /** Ids de todas as linhas fundidas neste grupo — para encontrar correções no histórico de qualquer uma delas. */
+  idsGrupo: string[];
 }
 
 /**
@@ -79,10 +85,37 @@ function agruparProgramados(alertas: Alerta[]): CorteProgramadoAgrupado[] {
   for (const alerta of alertas) {
     const chave = `${alerta.freguesia ?? ""}|${alerta.data_inicio ?? ""}|${alerta.data_fim ?? ""}`;
     const atual = porChave.get(chave);
-    if (atual) atual.zonas++;
-    else porChave.set(chave, { ...alerta, zonas: 1 });
+    if (atual) {
+      atual.zonas++;
+      atual.idsGrupo.push(alerta.id);
+    } else {
+      porChave.set(chave, { ...alerta, zonas: 1, idsGrupo: [alerta.id] });
+    }
   }
   return [...porChave.values()];
+}
+
+function rotuloCampo(campo: string): string {
+  if (campo === "data_inicio") return "início";
+  if (campo === "data_fim") return "fim";
+  return campo;
+}
+
+/** Bloco 14, Passo 3 — "Corrigido": a E-Redes às vezes muda o horário de um corte já publicado. */
+function NotasCorrecao({ ids, porAlerta }: { ids: string[]; porAlerta: Map<string, HistoricoAlerta[]> }) {
+  const notas = ids.flatMap((id) => porAlerta.get(id) ?? []);
+  if (notas.length === 0) return null;
+  return (
+    <ul className="mt-1 flex flex-col gap-0.5">
+      {notas.map((n, i) => (
+        <li key={i} className="text-xs text-stone-500 dark:text-stone-500">
+          Corrigido {tempoRelativo(n.criado_em)}: {rotuloCampo(n.campo)} passou de{" "}
+          {n.valor_anterior ? dataFormatada(n.valor_anterior) : "—"} para{" "}
+          {n.valor_novo ? dataFormatada(n.valor_novo) : "—"}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export default async function PaginaConcelho({ params }: PageProps) {
@@ -102,6 +135,20 @@ export default async function PaginaConcelho({ params }: PageProps) {
   const programados = agruparProgramados(alertas.filter((a) => estaProgramado(a))).sort((a, b) =>
     (a.data_inicio ?? "").localeCompare(b.data_inicio ?? "")
   );
+  // Bloco 14, Passo 2 — fechados pela comunidade via "Já voltou?", mais recentes primeiro.
+  const resolvidosRecentes = alertas
+    .filter((a) => a.status === "resolvido" && a.origem === "comunidade" && a.resolvido_em)
+    .sort((a, b) => (b.resolvido_em ?? "").localeCompare(a.resolvido_em ?? ""))
+    .slice(0, 5);
+
+  // Bloco 14, Passo 3 — notas de "corrigido" (ex.: horário de um corte alterado pela E-Redes).
+  const historico = await listarHistoricoDosAlertas(alertas.map((a) => a.id));
+  const historicoPorAlerta = new Map<string, HistoricoAlerta[]>();
+  for (const nota of historico) {
+    const lista = historicoPorAlerta.get(nota.alerta_id) ?? [];
+    lista.push(nota);
+    historicoPorAlerta.set(nota.alerta_id, lista);
+  }
 
   const jsonLd = {
     "@context": "https://schema.org",
@@ -174,7 +221,7 @@ export default async function PaginaConcelho({ params }: PageProps) {
               key={a.id}
               className="rounded-xl border border-stone-200 p-4 dark:border-stone-800"
             >
-              <p className="flex items-center gap-1.5 font-semibold text-stone-900 dark:text-stone-50">
+              <p className="flex flex-wrap items-center gap-1.5 font-semibold text-stone-900 dark:text-stone-50">
                 {a.tipo_servico === "luz" ? (
                   <Zap size={16} className="text-amber-500" aria-hidden />
                 ) : (
@@ -182,6 +229,11 @@ export default async function PaginaConcelho({ params }: PageProps) {
                 )}
                 {a.tipo_servico === "luz" ? "Falta de luz" : "Falta de água"}
                 {a.freguesia ? ` — ${a.freguesia}` : ""}
+                {a.origem === "comunidade" && (
+                  <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-800 dark:bg-green-900 dark:text-green-200">
+                    <CheckCircle2 size={10} aria-hidden /> Confirmado
+                  </span>
+                )}
               </p>
               {a.descricao && <p className="text-sm text-stone-600 dark:text-stone-400">{a.descricao}</p>}
               <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
@@ -190,9 +242,27 @@ export default async function PaginaConcelho({ params }: PageProps) {
                 ) : (
                   <Users size={13} className="shrink-0" aria-hidden />
                 )}
-                {a.origem === "oficial" ? "Oficial E-REDES" : "Comunidade"} · {tempoRelativo(a.criado_em)}
+                {a.origem === "oficial" ? (
+                  <Link
+                    href={LINK_FONTE_EREDES}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-stone-700 dark:hover:text-stone-300"
+                  >
+                    {NOME_FONTE_EREDES}
+                  </Link>
+                ) : (
+                  "Comunidade"
+                )}{" "}
+                · {tempoRelativo(a.criado_em)}
                 {a.origem === "comunidade" && ` · ${a.contador_votos} confirmações`}
               </p>
+              <NotasCorrecao ids={[a.id]} porAlerta={historicoPorAlerta} />
+              {a.origem === "comunidade" && (
+                <div className="mt-2">
+                  <BotaoJaVoltou id={a.id} />
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -251,8 +321,44 @@ export default async function PaginaConcelho({ params }: PageProps) {
                   {a.data_fim && ` · termina ${dataFormatada(a.data_fim)}`}
                 </p>
                 <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
-                  <ShieldCheck size={13} className="shrink-0" aria-hidden /> Oficial E-REDES
+                  <ShieldCheck size={13} className="shrink-0" aria-hidden />
+                  <Link
+                    href={LINK_FONTE_EREDES}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-stone-700 dark:hover:text-stone-300"
+                  >
+                    {NOME_FONTE_EREDES}
+                  </Link>
                   {a.zonas > 1 && ` · ${a.zonas} ruas/zonas afetadas`}
+                </p>
+                <NotasCorrecao ids={a.idsGrupo} porAlerta={historicoPorAlerta} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {resolvidosRecentes.length > 0 && (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-bold tracking-wide text-stone-900 uppercase dark:text-stone-50">
+            Resolvidos recentemente
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {resolvidosRecentes.map((a) => (
+              <li key={a.id} className="rounded-xl border border-stone-200 p-4 opacity-80 dark:border-stone-800">
+                <p className="flex items-center gap-1.5 font-semibold text-stone-900 dark:text-stone-50">
+                  {a.tipo_servico === "luz" ? (
+                    <Zap size={16} className="text-amber-500" aria-hidden />
+                  ) : (
+                    <Droplet size={16} className="text-sky-500" aria-hidden />
+                  )}
+                  {a.tipo_servico === "luz" ? "Falta de luz" : "Falta de água"}
+                  {a.freguesia ? ` — ${a.freguesia}` : ""}
+                </p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
+                  <Users size={13} className="shrink-0" aria-hidden /> Comunidade · durou{" "}
+                  {formatarDuracao(a.criado_em, a.resolvido_em!)} · resolvido {tempoRelativo(a.resolvido_em!)}
                 </p>
               </li>
             ))}

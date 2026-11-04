@@ -24,6 +24,8 @@ function alertaBase(overrides: Partial<Alerta> = {}): Alerta {
     atualizado_em: new Date().toISOString(),
     data_inicio: null,
     data_fim: null,
+    contador_resolvido_votos: 0,
+    resolvido_em: null,
     ...overrides,
   };
 }

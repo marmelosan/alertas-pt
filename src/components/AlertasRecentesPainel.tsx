@@ -93,8 +93,8 @@ export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?
                 ) : (
                   a.origem === "comunidade" &&
                   a.contador_votos > 0 && (
-                    <span className="shrink-0 text-xs text-stone-500 dark:text-stone-400">
-                      {a.contador_votos} {a.contador_votos === 1 ? "confirmação" : "confirmações"}
+                    <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200">
+                      Confirmado · {a.contador_votos} {a.contador_votos === 1 ? "voto" : "votos"}
                     </span>
                   )
                 )}

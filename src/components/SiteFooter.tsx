@@ -7,6 +7,8 @@ const NAVEGAR = [
   { href: "/cortes", label: "Concelhos" },
   { href: "/guias", label: "Guias" },
   { href: "/faq", label: "FAQ" },
+  { href: "/como-verificamos", label: "Como verificamos" },
+  { href: "/estado", label: "Estado do sistema" },
 ];
 
 const LEGAL = [
