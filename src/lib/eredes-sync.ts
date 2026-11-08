@@ -80,21 +80,46 @@ interface AlertaOficialPreparado {
   origem: "oficial";
   data_inicio: string | null;
   data_fim: string | null;
+  status: "ativo";
+}
+
+/**
+ * Desvio (em minutos, a somar a UTC) da hora de Lisboa num instante dado —
+ * usa o Intl/ICU do próprio runtime em vez de datas fixas de mudança de
+ * hora, por isso não precisa de atualização manual todos os anos.
+ */
+function desvioHorarioLisboa(instanteAproximado: Date): number {
+  const partes = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Lisbon",
+    timeZoneName: "shortOffset",
+  }).formatToParts(instanteAproximado);
+  const nomeFuso = partes.find((p) => p.type === "timeZoneName")?.value ?? "GMT+0";
+  const match = nomeFuso.match(/GMT([+-]\d+)/);
+  return match ? Number(match[1]) * 60 : 0;
 }
 
 /**
  * Os timestamps da E-Redes vêm sem fuso horário explícito (ex.:
- * "2026-10-30T07:00:00") — assumimos hora de Lisboa. ⚠️ Por verificar: não
- * fazemos conversão de DST (verão/inverno); no inverno (WET = UTC+0)
- * coincide com UTC, no verão (WEST = UTC+1) pode ficar 1h adiantado. Dado
- * que isto só afeta a hora exata a que um corte aparece como "a começar"
- * (não o dia), fica assinalado para corrigir mais tarde em vez de
- * silenciosamente ignorado.
+ * "2026-10-30T07:00:00") — assumimos hora de Lisboa. Lê-se primeiro como se
+ * já fosse UTC só para descobrir, pelo calendário de DST do Europe/Lisbon,
+ * se nesse instante aproximado estamos em WET (UTC+0) ou WEST (UTC+1); o
+ * erro que isto introduz nunca muda o resultado exceto na própria hora da
+ * transição (2x por ano), porque o desvio só pode diferir em 1h de um
+ * lado ou do outro dessa fronteira.
  */
 function paraTimestamptz(valor: unknown): string | null {
   if (typeof valor !== "string" || !valor) return null;
-  const data = new Date(valor);
-  return Number.isNaN(data.getTime()) ? null : data.toISOString();
+
+  const semFuso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(valor);
+  if (!semFuso) {
+    const data = new Date(valor);
+    return Number.isNaN(data.getTime()) ? null : data.toISOString();
+  }
+
+  const aproximado = new Date(`${valor}Z`);
+  if (Number.isNaN(aproximado.getTime())) return null;
+  const desvioMin = desvioHorarioLisboa(aproximado);
+  return new Date(aproximado.getTime() - desvioMin * 60000).toISOString();
 }
 
 async function prepararAlerta(
@@ -185,6 +210,12 @@ async function prepararAlerta(
     data_fim: dataFim,
     descricao: descricaoPartes.join(" ") || null,
     origem: "oficial",
+    // Explícito de propósito: sem isto, o upsert não mexia em `status` num
+    // conflito, por isso uma linha que tivesse ficado "resolvido" por
+    // engano (ex.: o corte de 500 registos de antes) nunca mais voltava a
+    // "ativo", mesmo a E-Redes continuando a publicá-la. Reafirmar aqui
+    // torna a sincronização auto-corrigível.
+    status: "ativo",
   };
 }
 
@@ -324,21 +355,53 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
   }
   await gravarLote();
 
-  const idsAtuais = preparados.map((a) => a.external_id);
-  const { data: resolvidos, error: erroResolver } = await supabase
+  // Antes disto era um único UPDATE com "NOT IN (<todos os ids atuais>)" —
+  // o PostgREST codifica os filtros sempre na query string, mesmo em
+  // updates, e com o limite de 500 registos removido essa lista passou a
+  // ser grande o suficiente para estourar o tamanho da URL (foi a causa
+  // real da sincronização a falhar com "erro desconhecido" a seguir a essa
+  // mudança). Em vez disso: lê só os ids oficiais já ativos na BD, calcula
+  // em JS quais não vieram nesta sincronização, e resolve só esses — no
+  // dia a dia é uma lista muito mais pequena do que o dataset inteiro.
+  const idsAtuais = new Set(preparados.map((a) => a.external_id));
+  const { data: ativosGuardados, error: erroAtivos } = await supabase
     .from("alertas")
-    .update({ status: "resolvido" })
+    .select("external_id")
     .eq("origem", "oficial")
     .eq("status", "ativo")
-    .not("external_id", "in", `(${idsAtuais.map((id) => `"${id}"`).join(",") || "''"})`)
-    .select("id");
+    .not("external_id", "is", null);
 
-  if (erroResolver) throw erroResolver;
+  if (erroAtivos) {
+    throw new Error(`[eredes-sync] não consegui ler os alertas oficiais ativos: ${erroAtivos.message}`);
+  }
+
+  const idsParaResolver = (ativosGuardados ?? [])
+    .map((a) => a.external_id as string)
+    .filter((id) => !idsAtuais.has(id));
+
+  // Ainda em lotes, por segurança — mesmo a lista normalmente pequena,
+  // nada garante que a E-Redes nunca remove centenas de uma vez.
+  let resolvidosPorAusencia = 0;
+  for (let i = 0; i < idsParaResolver.length; i += TAMANHO_LOTE) {
+    const grupo = idsParaResolver.slice(i, i + TAMANHO_LOTE);
+    const { data: resolvidos, error: erroResolver } = await supabase
+      .from("alertas")
+      .update({ status: "resolvido" })
+      .eq("origem", "oficial")
+      .eq("status", "ativo")
+      .in("external_id", grupo)
+      .select("id");
+
+    if (erroResolver) {
+      throw new Error(`[eredes-sync] não consegui resolver alertas ausentes: ${erroResolver.message}`);
+    }
+    resolvidosPorAusencia += resolvidos?.length ?? 0;
+  }
 
   return {
     processados,
     inseridosOuAtualizados,
     ignoradosPorFaltaDeSchema: ignorados,
-    resolvidosPorAusencia: resolvidos?.length ?? 0,
+    resolvidosPorAusencia,
   };
 }

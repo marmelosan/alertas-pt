@@ -20,11 +20,19 @@ function tempoRelativo(iso: string): string {
 export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?: boolean }) {
   const [alertas, setAlertas] = useState<Alerta[] | null>(null);
   const [totalProgramados, setTotalProgramados] = useState(0);
+  // Distingue "pedido falhou" de "está mesmo tudo bem" — sem isto, um erro
+  // de rede mostrava "Sem falhas — boas notícias", exatamente a mensagem
+  // errada a dar no pior momento possível (pico de carga durante um
+  // incidente a sério).
+  const [erro, setErro] = useState(false);
 
   useEffect(() => {
     listarAlertasAtivos()
       .then((dados) => setAlertas(dados.slice(0, 8)))
-      .catch(() => setAlertas([]));
+      .catch(() => {
+        setAlertas([]);
+        setErro(true);
+      });
     listarCortesProgramados()
       .then((dados) => setTotalProgramados(dados.length))
       .catch(() => {});
@@ -48,7 +56,13 @@ export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?
           ))}
         </ul>
       )}
-      {alertas?.length === 0 && (
+      {alertas?.length === 0 && erro && (
+        <p className="text-sm text-amber-700 dark:text-amber-400">
+          Não consegui carregar os reportes agora — pode não haver falhas, ou pode ser só a ligação. Tenta recarregar
+          a página.
+        </p>
+      )}
+      {alertas?.length === 0 && !erro && (
         <div className="flex flex-col gap-1.5">
           <p className="text-sm text-stone-500 dark:text-stone-400">
             {totalProgramados > 0 ? "Sem falhas em curso agora." : "Sem falhas em curso agora — boas notícias."}

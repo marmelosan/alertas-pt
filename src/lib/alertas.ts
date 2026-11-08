@@ -122,6 +122,7 @@ export async function reportarAlerta(novo: NovoAlerta): Promise<ResultadoReporte
 export async function confirmarAlerta(id: string): Promise<Alerta> {
   const { data, error } = await supabaseBrowser.rpc("votar_alerta", {
     alerta_id: id,
+    p_client_id: obterClientId(),
   });
 
   if (error) throw error;
@@ -131,6 +132,7 @@ export async function confirmarAlerta(id: string): Promise<Alerta> {
 export async function denunciarAlerta(id: string): Promise<Alerta> {
   const { data, error } = await supabaseBrowser.rpc("denunciar_alerta", {
     alerta_id: id,
+    p_client_id: obterClientId(),
   });
 
   if (error) throw error;
@@ -141,6 +143,7 @@ export async function denunciarAlerta(id: string): Promise<Alerta> {
 export async function marcarResolvidoAlerta(id: string): Promise<Alerta> {
   const { data, error } = await supabaseBrowser.rpc("marcar_resolvido_alerta", {
     alerta_id: id,
+    p_client_id: obterClientId(),
   });
 
   if (error) throw error;
