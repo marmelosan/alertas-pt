@@ -297,7 +297,11 @@ export async function sincronizarEredes(): Promise<ResultadoSincronizacao> {
   }
 
   for (const datasetId of datasets) {
-    const registos = await obterTodosOsRegistos(datasetId, { limiteTotal: 500 });
+    // Sem limiteTotal de propósito: mais abaixo marcamos como "resolvido"
+    // tudo o que não aparecer nesta resposta, por isso tem de ser o
+    // dataset inteiro — um corte real só porque não coube num corte
+    // artificial de registos (já aconteceu: ver commit da correção).
+    const registos = await obterTodosOsRegistos(datasetId);
     processados += registos.length;
 
     for (const registo of registos) {

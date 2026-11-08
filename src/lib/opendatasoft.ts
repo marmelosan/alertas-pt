@@ -18,10 +18,17 @@ interface RespostaRegistos {
 /**
  * Pagina um dataset inteiro (até `limiteTotal` registos). A API pagina
  * em blocos de `tamanhoPagina` (máx. 100 por pedido na v2.1).
+ *
+ * `limiteTotal` é só uma rede de segurança contra uma resposta anómala da
+ * API, não um limite pensado para recortar resultados de propósito — quem
+ * chamar isto a sério (ex.: sincronizarEredes, que depois marca como
+ * "resolvido" tudo o que não aparece na resposta) tem de ver o dataset
+ * inteiro, ou arrisca-se a fechar por engano cortes reais que só não
+ * calharam de vir nas primeiras páginas.
  */
 export async function obterTodosOsRegistos(
   datasetId: string,
-  { limiteTotal = 1000, tamanhoPagina = 100 }: { limiteTotal?: number; tamanhoPagina?: number } = {}
+  { limiteTotal = 5000, tamanhoPagina = 100 }: { limiteTotal?: number; tamanhoPagina?: number } = {}
 ): Promise<RegistoOpendatasoft[]> {
   const registos: RegistoOpendatasoft[] = [];
   let offset = 0;
