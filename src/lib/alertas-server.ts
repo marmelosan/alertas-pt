@@ -2,6 +2,7 @@ import { cache } from "react";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { paraSlug } from "@/lib/slug";
 import { calcularEstado } from "@/lib/estado-alerta";
+import { paginarTudo } from "@/lib/paginar-supabase";
 import type { Alerta } from "@/types/alerta";
 
 /**
@@ -15,10 +16,11 @@ import type { Alerta } from "@/types/alerta";
  */
 
 export const listarConcelhosComAlertas = cache(async (): Promise<string[]> => {
-  const { data, error } = await supabaseBrowser.from("alertas").select("concelho");
-  if (error) throw error;
+  const linhas = await paginarTudo<{ concelho: string }>((desde, ate) =>
+    supabaseBrowser.from("alertas").select("concelho").range(desde, ate)
+  );
 
-  const unicos = new Set((data ?? []).map((r) => r.concelho));
+  const unicos = new Set(linhas.map((r) => r.concelho));
   return [...unicos];
 });
 
@@ -35,9 +37,9 @@ export interface ConcelhosAtivosPorOrigem {
  * mesmo o que conta como ativo/programado é sempre `calcularEstado()`.
  */
 const listarAlertasComStatusAtivo = cache(async (): Promise<Alerta[]> => {
-  const { data, error } = await supabaseBrowser.from("alertas").select("*").eq("status", "ativo");
-  if (error) throw error;
-  return data ?? [];
+  return paginarTudo<Alerta>((desde, ate) =>
+    supabaseBrowser.from("alertas").select("*").eq("status", "ativo").range(desde, ate)
+  );
 });
 
 /**

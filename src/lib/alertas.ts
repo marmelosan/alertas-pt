@@ -2,6 +2,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 import { obterClientId } from "@/lib/client-id";
 import { adicionarAFila } from "@/lib/fila-offline";
 import { calcularEstado, estaProgramado, estaProgramadoHoje, estaVisivelAgora } from "@/lib/estado-alerta";
+import { paginarTudo } from "@/lib/paginar-supabase";
 import type { Alerta, NovoAlerta } from "@/types/alerta";
 
 export type ResultadoReporte = { tipo: "enviado"; alerta: Alerta } | { tipo: "offline" };
@@ -17,15 +18,16 @@ export type ResultadoReporte = { tipo: "enviado"; alerta: Alerta } | { tipo: "of
  * `calcularEstado()`/`estaPorConfirmar()` por alerta.
  */
 export async function listarAlertasAtivos(): Promise<Alerta[]> {
-  const { data, error } = await supabaseBrowser
-    .from("alertas")
-    .select("*")
-    .eq("status", "ativo")
-    .order("criado_em", { ascending: false });
-
-  if (error) throw error;
+  const todos = await paginarTudo<Alerta>((desde, ate) =>
+    supabaseBrowser
+      .from("alertas")
+      .select("*")
+      .eq("status", "ativo")
+      .order("criado_em", { ascending: false })
+      .range(desde, ate)
+  );
   const agora = new Date();
-  return (data ?? []).filter((alerta) => estaVisivelAgora(alerta, agora));
+  return todos.filter((alerta) => estaVisivelAgora(alerta, agora));
 }
 
 /**
@@ -38,16 +40,17 @@ export async function listarAlertasAtivos(): Promise<Alerta[]> {
  * mapa) pede isto.
  */
 export async function listarCortesProgramados(): Promise<Alerta[]> {
-  const { data, error } = await supabaseBrowser
-    .from("alertas")
-    .select("*")
-    .eq("status", "ativo")
-    .eq("origem", "oficial")
-    .order("data_inicio", { ascending: true });
-
-  if (error) throw error;
+  const todos = await paginarTudo<Alerta>((desde, ate) =>
+    supabaseBrowser
+      .from("alertas")
+      .select("*")
+      .eq("status", "ativo")
+      .eq("origem", "oficial")
+      .order("data_inicio", { ascending: true })
+      .range(desde, ate)
+  );
   const agora = new Date();
-  return (data ?? []).filter((alerta) => estaProgramado(alerta, agora));
+  return todos.filter((alerta) => estaProgramado(alerta, agora));
 }
 
 export interface EstadoServico {
@@ -64,8 +67,9 @@ export interface EstadoServico {
  * contagens, em vez de três pedidos separados ao Supabase.
  */
 export async function obterEstadoServico(): Promise<EstadoServico> {
-  const { data, error } = await supabaseBrowser.from("alertas").select("*").eq("status", "ativo");
-  if (error) throw error;
+  const todos = await paginarTudo<Alerta>((desde, ate) =>
+    supabaseBrowser.from("alertas").select("*").eq("status", "ativo").range(desde, ate)
+  );
 
   const agora = new Date();
 
@@ -73,7 +77,7 @@ export async function obterEstadoServico(): Promise<EstadoServico> {
   let programadosHoje = 0;
   let ultimaAtualizacaoOficial: string | null = null;
 
-  for (const alerta of data ?? []) {
+  for (const alerta of todos) {
     const estado = calcularEstado(alerta, agora);
     if (estado === "ativo") ativos++;
     if (estaProgramadoHoje(alerta, agora)) programadosHoje++;
