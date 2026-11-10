@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
+import { ehConcelhoValido } from "@/lib/concelhos-validos";
 
 const LIMITE_REPORTES_DISPOSITIVO = 3;
 const LIMITE_REPORTES_IP = 6; // mais folgado — um IP pode ser várias pessoas na mesma rede (casa, prédio)
@@ -48,6 +49,12 @@ function validar(corpo: CorpoPedido): string | null {
   }
   if (typeof corpo.concelho !== "string" || corpo.concelho.trim().length === 0) {
     return "concelho é obrigatório";
+  }
+  // Sem isto, um ponto no meio do oceano (geocodificação reversa falhada ou
+  // manipulada) gerava um concelho fantasma e uma página pública a sério
+  // para ele — já aconteceu em produção (ver "Oceano Atlântico").
+  if (!ehConcelhoValido(corpo.concelho)) {
+    return "concelho não reconhecido — tem de ser um concelho português real";
   }
   if (typeof corpo.latitude !== "number" || corpo.latitude < -90 || corpo.latitude > 90) {
     return "latitude inválida";
