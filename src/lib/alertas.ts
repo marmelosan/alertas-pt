@@ -123,33 +123,34 @@ export async function reportarAlerta(novo: NovoAlerta): Promise<ResultadoReporte
   return { tipo: "enviado", alerta: corpo };
 }
 
-export async function confirmarAlerta(id: string): Promise<Alerta> {
-  const { data, error } = await supabaseBrowser.rpc("votar_alerta", {
-    alerta_id: id,
-    p_client_id: obterClientId(),
+/**
+ * As três funções abaixo passam por rotas próprias (/api/votar,
+ * /api/denunciar, /api/resolver) em vez de chamar `supabaseBrowser.rpc()`
+ * diretamente — era assim antes, e só ficava limitado por `client_id`
+ * (reiniciável à vontade numa janela anónima), nunca por IP. É exatamente
+ * essa chamada direta que permitia confirmar um alerta falso num concelho
+ * real só com duas janelas anónimas.
+ */
+async function chamarRotaInteracao(caminho: string, id: string): Promise<Alerta> {
+  const res = await fetch(caminho, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alerta_id: id, client_id: obterClientId() }),
   });
+  const corpo = await res.json();
+  if (!res.ok) throw new Error(corpo.erro ?? "não consegui processar o pedido");
+  return corpo;
+}
 
-  if (error) throw error;
-  return data;
+export async function confirmarAlerta(id: string): Promise<Alerta> {
+  return chamarRotaInteracao("/api/votar", id);
 }
 
 export async function denunciarAlerta(id: string): Promise<Alerta> {
-  const { data, error } = await supabaseBrowser.rpc("denunciar_alerta", {
-    alerta_id: id,
-    p_client_id: obterClientId(),
-  });
-
-  if (error) throw error;
-  return data;
+  return chamarRotaInteracao("/api/denunciar", id);
 }
 
 /** Bloco 14, Passo 2: "Já voltou?" — precisa de 2 votos independentes para fechar o alerta, igual à confirmação de "ativo". */
 export async function marcarResolvidoAlerta(id: string): Promise<Alerta> {
-  const { data, error } = await supabaseBrowser.rpc("marcar_resolvido_alerta", {
-    alerta_id: id,
-    p_client_id: obterClientId(),
-  });
-
-  if (error) throw error;
-  return data;
+  return chamarRotaInteracao("/api/resolver", id);
 }
