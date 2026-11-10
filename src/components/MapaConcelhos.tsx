@@ -11,7 +11,7 @@ import { Zap, Droplet, ShieldCheck, Users, Clock, CheckCircle2 } from "lucide-re
 import { paraSlug } from "@/lib/slug";
 import { criarIconeAlerta } from "@/lib/icones-mapa";
 import { formatarDataHora } from "@/lib/tempo";
-import { LINK_FONTE_EREDES, NOME_FONTE_EREDES } from "@/lib/fontes";
+import { obterFonteOficial } from "@/lib/fontes";
 import { registarAberturaMarcador } from "@/lib/analytics";
 import type { AlertaMapaConcelho, ConcelhosAtivosPorOrigem } from "@/lib/alertas-server";
 
@@ -187,9 +187,16 @@ export function MapaConcelhos({
                     <Users size={13} className="shrink-0" aria-hidden />
                   )}
                   {ponto.origem === "oficial" ? (
-                    <Link href={LINK_FONTE_EREDES} target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-700 dark:hover:text-stone-300">
-                      {NOME_FONTE_EREDES}
-                    </Link>
+                    (() => {
+                      const fonte = obterFonteOficial(ponto);
+                      return fonte ? (
+                        <Link href={fonte.link} target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-700 dark:hover:text-stone-300">
+                          {fonte.nome}
+                        </Link>
+                      ) : (
+                        "Oficial"
+                      );
+                    })()
                   ) : (
                     "Comunidade"
                   )}

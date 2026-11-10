@@ -146,3 +146,42 @@ export async function geocodificarCodigoPostal(
     freguesia: address.suburb || address.city_district || address.village || null,
   };
 }
+
+/**
+ * Geocodificação direta a partir de um nome de lugar — usada pelas fontes
+ * de água (Bloco 13), cujos avisos vêm com nomes de localidade ("Matos",
+ * "São Simão") em vez de código postal como a E-Redes. Mesmo endpoint/
+ * chave da LocationIQ que `geocodificarCodigoPostal`, pela mesma razão
+ * (Nominatim pública bloqueia com 403 os IPs partilhados da Vercel/GitHub
+ * Actions). Devolve só coordenadas — o concelho já vem conhecido da própria
+ * fonte, não precisa de ser adivinhado pela geocodificação como acontece
+ * com o código postal da E-Redes.
+ */
+export async function geocodificarLocalidade(
+  consulta: string
+): Promise<{ latitude: number; longitude: number } | null> {
+  const chave = process.env.LOCATIONIQ_API_KEY;
+  if (!chave) {
+    throw new Error("LOCATIONIQ_API_KEY em falta — ver .env.local.example");
+  }
+
+  const url = new URL("https://us1.locationiq.com/v1/search");
+  url.searchParams.set("key", chave);
+  url.searchParams.set("format", "json");
+  url.searchParams.set("q", consulta);
+  url.searchParams.set("countrycodes", "pt");
+  url.searchParams.set("limit", "1");
+
+  const res = await fetch(url, { headers: { "Accept-Language": "pt-PT" } });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => "");
+    throw new Error(`LocationIQ devolveu ${res.status}: ${corpo}`);
+  }
+
+  const resultados = await res.json();
+  const primeiro = resultados?.[0];
+  if (!primeiro) return null;
+
+  return { latitude: Number(primeiro.lat), longitude: Number(primeiro.lon) };
+}

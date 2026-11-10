@@ -20,7 +20,7 @@ import { processarFila } from "@/lib/fila-offline";
 import { estaPorConfirmar, estaProgramadoHoje } from "@/lib/estado-alerta";
 import { criarIconeAlerta, type EstadoVisualMarcador } from "@/lib/icones-mapa";
 import { tempoRelativo, formatarDataHora } from "@/lib/tempo";
-import { LINK_FONTE_EREDES, NOME_FONTE_EREDES } from "@/lib/fontes";
+import { obterFonteOficial } from "@/lib/fontes";
 import {
   registarEvento,
   registarInicioReporte,
@@ -643,9 +643,16 @@ export function MapaAlertas() {
                       <Users size={13} className="shrink-0" aria-hidden />
                     )}
                     {alerta.origem === "oficial" ? (
-                      <Link href={LINK_FONTE_EREDES} target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-700 dark:hover:text-stone-300">
-                        {NOME_FONTE_EREDES}
-                      </Link>
+                      (() => {
+                        const fonte = obterFonteOficial(alerta);
+                        return fonte ? (
+                          <Link href={fonte.link} target="_blank" rel="noopener noreferrer" className="underline hover:text-stone-700 dark:hover:text-stone-300">
+                            {fonte.nome}
+                          </Link>
+                        ) : (
+                          "Oficial"
+                        );
+                      })()
                     ) : (
                       "Comunidade"
                     )}{" "}

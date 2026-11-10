@@ -5,7 +5,7 @@ import { obterConcelhoPorSlug, listarAlertasDoConcelho, listarHistoricoDosAlerta
 import type { HistoricoAlerta } from "@/lib/alertas-server";
 import { estaAtivo, estaPorConfirmar, estaProgramado } from "@/lib/estado-alerta";
 import { formatarDuracao } from "@/lib/tempo";
-import { LINK_FONTE_EREDES, NOME_FONTE_EREDES } from "@/lib/fontes";
+import { obterFonteOficial } from "@/lib/fontes";
 import { Breadcrumb } from "@/components/Breadcrumb";
 import { BotaoConfirmar } from "@/components/BotaoConfirmar";
 import { BotaoJaVoltou } from "@/components/BotaoJaVoltou";
@@ -180,7 +180,7 @@ export default async function PaginaConcelho({ params }: PageProps) {
     {
       pergunta: "Estes dados são oficiais?",
       resposta:
-        "Os cortes de luz programados vêm diretamente da E-Redes. Avarias inesperadas e falhas de água são reportadas pela comunidade — cada alerta mostra a origem.",
+        "Os cortes de luz programados vêm diretamente da E-Redes; a falta de água tem fonte oficial nalguns concelhos (indicada no alerta) e é reportada pela comunidade nos restantes — cada alerta mostra a origem.",
     },
   ];
 
@@ -210,8 +210,24 @@ export default async function PaginaConcelho({ params }: PageProps) {
           {ativos.length === 0 && `Sem falhas de água ou luz reportadas em ${concelho} neste momento.`}
           {ativos.length > 0 &&
             `${ativos.length} ${ativos.length === 1 ? "falha ativa" : "falhas ativas"} em ${concelho} agora — ${luzAtivos.length} de luz e ${aguaAtivos.length} de água.`}
-          {" "}Dados cruzados com a E-Redes e reportados pela comunidade.
+          {" "}Dados oficiais cruzados com a comunidade.
         </p>
+        {/* Bloco de resposta à tempestade de 11/11/2026 — ligações diretas para quem chega aqui já sem luz/água a perguntar "o que faço agora". */}
+        {(luzAtivos.length > 0 || aguaAtivos.length > 0) && (
+          <p className="mt-1 text-sm text-stone-500">
+            {luzAtivos.length > 0 && (
+              <Link href="/guias/falta-de-luz" className="underline underline-offset-2">
+                O que fazer sem luz
+              </Link>
+            )}
+            {luzAtivos.length > 0 && aguaAtivos.length > 0 && " · "}
+            {aguaAtivos.length > 0 && (
+              <Link href="/guias/falta-de-agua" className="underline underline-offset-2">
+                O que fazer sem água
+              </Link>
+            )}
+          </p>
+        )}
       </header>
 
       {ativos.length > 0 && (
@@ -243,14 +259,21 @@ export default async function PaginaConcelho({ params }: PageProps) {
                   <Users size={13} className="shrink-0" aria-hidden />
                 )}
                 {a.origem === "oficial" ? (
-                  <Link
-                    href={LINK_FONTE_EREDES}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-stone-700 dark:hover:text-stone-300"
-                  >
-                    {NOME_FONTE_EREDES}
-                  </Link>
+                  (() => {
+                    const fonte = obterFonteOficial(a);
+                    return fonte ? (
+                      <Link
+                        href={fonte.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-stone-700 dark:hover:text-stone-300"
+                      >
+                        {fonte.nome}
+                      </Link>
+                    ) : (
+                      "Oficial"
+                    );
+                  })()
                 ) : (
                   "Comunidade"
                 )}{" "}
@@ -322,14 +345,21 @@ export default async function PaginaConcelho({ params }: PageProps) {
                 </p>
                 <p className="mt-1 flex items-center gap-1 text-xs text-stone-500">
                   <ShieldCheck size={13} className="shrink-0" aria-hidden />
-                  <Link
-                    href={LINK_FONTE_EREDES}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline hover:text-stone-700 dark:hover:text-stone-300"
-                  >
-                    {NOME_FONTE_EREDES}
-                  </Link>
+                  {(() => {
+                    const fonte = obterFonteOficial(a);
+                    return fonte ? (
+                      <Link
+                        href={fonte.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline hover:text-stone-700 dark:hover:text-stone-300"
+                      >
+                        {fonte.nome}
+                      </Link>
+                    ) : (
+                      "Oficial"
+                    );
+                  })()}
                   {a.zonas > 1 && ` · ${a.zonas} ruas/zonas afetadas`}
                 </p>
                 <NotasCorrecao ids={a.idsGrupo} porAlerta={historicoPorAlerta} />

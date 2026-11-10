@@ -21,7 +21,7 @@ export async function listarAlertasAtivos(): Promise<Alerta[]> {
   const todos = await paginarTudo<Alerta>((desde, ate) =>
     supabaseBrowser
       .from("alertas")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("status", "ativo")
       .order("criado_em", { ascending: false })
       .range(desde, ate)
@@ -43,7 +43,7 @@ export async function listarCortesProgramados(): Promise<Alerta[]> {
   const todos = await paginarTudo<Alerta>((desde, ate) =>
     supabaseBrowser
       .from("alertas")
-      .select("*")
+      .select("*", { count: "exact" })
       .eq("status", "ativo")
       .eq("origem", "oficial")
       .order("data_inicio", { ascending: true })
@@ -68,7 +68,7 @@ export interface EstadoServico {
  */
 export async function obterEstadoServico(): Promise<EstadoServico> {
   const todos = await paginarTudo<Alerta>((desde, ate) =>
-    supabaseBrowser.from("alertas").select("*").eq("status", "ativo").range(desde, ate)
+    supabaseBrowser.from("alertas").select("*", { count: "exact" }).eq("status", "ativo").range(desde, ate)
   );
 
   const agora = new Date();

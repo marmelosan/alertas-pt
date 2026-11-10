@@ -17,7 +17,7 @@ import type { Alerta } from "@/types/alerta";
 
 export const listarConcelhosComAlertas = cache(async (): Promise<string[]> => {
   const linhas = await paginarTudo<{ concelho: string }>((desde, ate) =>
-    supabaseBrowser.from("alertas").select("concelho").range(desde, ate)
+    supabaseBrowser.from("alertas").select("concelho", { count: "exact" }).range(desde, ate)
   );
 
   const unicos = new Set(linhas.map((r) => r.concelho));
@@ -38,7 +38,7 @@ export interface ConcelhosAtivosPorOrigem {
  */
 const listarAlertasComStatusAtivo = cache(async (): Promise<Alerta[]> => {
   return paginarTudo<Alerta>((desde, ate) =>
-    supabaseBrowser.from("alertas").select("*").eq("status", "ativo").range(desde, ate)
+    supabaseBrowser.from("alertas").select("*", { count: "exact" }).eq("status", "ativo").range(desde, ate)
   );
 });
 
