@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
-import { ehConcelhoValido } from "@/lib/concelhos-validos";
+import { ehConcelhoValido, estaDentroDoConcelho } from "@/lib/concelhos-validos";
 
 const LIMITE_REPORTES_DISPOSITIVO = 3;
 const LIMITE_REPORTES_IP = 6; // mais folgado — um IP pode ser várias pessoas na mesma rede (casa, prédio)
@@ -61,6 +61,13 @@ function validar(corpo: CorpoPedido): string | null {
   }
   if (typeof corpo.longitude !== "number" || corpo.longitude < -180 || corpo.longitude > 180) {
     return "longitude inválida";
+  }
+  // Nome certo não chega sozinho — já aconteceu "Braga" com coordenadas
+  // perto de Lugo, em Espanha. Caixa delimitadora com margem generosa
+  // (~15km), não o polígono exato: apanha disparates óbvios sem rejeitar
+  // à toa um reporte genuíno perto de uma fronteira entre concelhos.
+  if (estaDentroDoConcelho(corpo.concelho, corpo.latitude, corpo.longitude) === false) {
+    return "localização não corresponde ao concelho indicado";
   }
   if (typeof corpo.client_id !== "string" || corpo.client_id.length < 8) {
     return "client_id em falta";
