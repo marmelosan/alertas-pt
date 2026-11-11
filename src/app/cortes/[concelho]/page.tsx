@@ -32,9 +32,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const alertas = await listarAlertasDoConcelho(concelho);
   const ativos = alertas.filter((a) => estaAtivo(a));
+  const programados = alertas.filter((a) => estaProgramado(a));
   const descricao = ativos.length
     ? `${ativos.length} ${ativos.length === 1 ? "falha ativa" : "falhas ativas"} reportadas em ${concelho} agora.`
-    : `Sem falhas de água ou luz reportadas em ${concelho} neste momento.`;
+    : programados.length
+      ? `Sem falhas ativas em ${concelho} agora, mas ${programados.length} ${programados.length === 1 ? "corte programado" : "cortes programados"} a caminho.`
+      : `Sem falhas de água ou luz reportadas em ${concelho} neste momento.`;
 
   return {
     title: `Falta de Água e Luz em ${concelho} | Foi Abaixo`,
@@ -72,6 +75,8 @@ interface CorteProgramadoAgrupado extends Alerta {
   zonas: number;
   /** Ids de todas as linhas fundidas neste grupo — para encontrar correções no histórico de qualquer uma delas. */
   idsGrupo: string[];
+  /** Códigos postais distintos deste grupo — é o identificador mais específico que a E-Redes dá; sem isto o "zonas" ficava só uma contagem, sem nomear nada. */
+  codigosPostais: string[];
 }
 
 /**
@@ -88,8 +93,16 @@ function agruparProgramados(alertas: Alerta[]): CorteProgramadoAgrupado[] {
     if (atual) {
       atual.zonas++;
       atual.idsGrupo.push(alerta.id);
+      if (alerta.codigo_postal && !atual.codigosPostais.includes(alerta.codigo_postal)) {
+        atual.codigosPostais.push(alerta.codigo_postal);
+      }
     } else {
-      porChave.set(chave, { ...alerta, zonas: 1, idsGrupo: [alerta.id] });
+      porChave.set(chave, {
+        ...alerta,
+        zonas: 1,
+        idsGrupo: [alerta.id],
+        codigosPostais: alerta.codigo_postal ? [alerta.codigo_postal] : [],
+      });
     }
   }
   return [...porChave.values()];
@@ -360,7 +373,9 @@ export default async function PaginaConcelho({ params }: PageProps) {
                       "Oficial"
                     );
                   })()}
-                  {a.zonas > 1 && ` · ${a.zonas} ruas/zonas afetadas`}
+                  {a.codigosPostais.length > 0
+                    ? ` · código postal: ${a.codigosPostais.join(", ")}`
+                    : a.zonas > 1 && ` · ${a.zonas} ruas/zonas afetadas`}
                 </p>
                 <NotasCorrecao ids={a.idsGrupo} porAlerta={historicoPorAlerta} />
               </li>

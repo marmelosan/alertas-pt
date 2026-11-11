@@ -26,6 +26,7 @@ function alertaBase(overrides: Partial<Alerta> = {}): Alerta {
     data_fim: null,
     contador_resolvido_votos: 0,
     resolvido_em: null,
+    codigo_postal: null,
     ...overrides,
   };
 }

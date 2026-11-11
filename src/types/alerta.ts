@@ -24,6 +24,8 @@ export interface Alerta {
   /** Bloco 14: votos em "Já voltou?" (só comunidade) e quando passou a resolvido de verdade. */
   contador_resolvido_votos: number;
   resolvido_em: string | null;
+  /** Só para origem="oficial" — código postal (7 dígitos) de origem, quando a E-Redes o fornece. */
+  codigo_postal: string | null;
 }
 
 export type NovoAlerta = Pick<

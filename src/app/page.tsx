@@ -3,6 +3,7 @@ import { MapaAlertasClient } from "@/components/MapaAlertasClient";
 import { PainelConfianca } from "@/components/PainelConfianca";
 import { AlertasRecentesPainel } from "@/components/AlertasRecentesPainel";
 import { AvisoTempestade } from "@/components/AvisoTempestade";
+import { ResumoServidor } from "@/components/ResumoServidor";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://foiabaixo.vercel.app";
 
@@ -18,7 +19,7 @@ const jsonLdSite = {
   },
 };
 
-export default function Home() {
+export default async function Home() {
   return (
     <>
       <AvisoTempestade />
@@ -49,6 +50,7 @@ export default function Home() {
               </p>
             </div>
           </div>
+          <ResumoServidor />
           <MapaAlertasClient />
           <PainelConfianca />
 

@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { obterTodosOsRegistos, type RegistoOpendatasoft } from "@/lib/opendatasoft";
 import { geocodificarCodigoPostal } from "@/lib/geo";
 import { getSupabaseServiceClient } from "@/lib/supabase-server";
+import { concelhoPorCoordenadas, ehConcelhoValido } from "@/lib/concelhos-validos";
 
 type SupabaseServiceClient = ReturnType<typeof getSupabaseServiceClient>;
 type CacheGeocodificacao = Map<string, { lat: number; lon: number; concelho: string; freguesia: string | null }>;
@@ -81,6 +82,8 @@ interface AlertaOficialPreparado {
   data_inicio: string | null;
   data_fim: string | null;
   status: "ativo";
+  /** Identificador mais granular que já temos quando a E-Redes o fornece — ver migração 0011. */
+  codigo_postal: string | null;
 }
 
 /**
@@ -138,7 +141,16 @@ async function prepararAlerta(
   if (geoPoint && concelhoBruto) {
     lat = geoPoint.lat;
     lon = geoPoint.lon;
-    concelho = String(concelhoBruto);
+    // O campo "municipality" da E-Redes às vezes vem com uma freguesia/
+    // localidade em vez do concelho oficial (ex.: "Ericeira" em vez de
+    // "Mafra") — como já temos as coordenadas, corrigimos sem nenhuma
+    // chamada de rede extra. Se nem assim resolver (ponto fora dos 308
+    // concelhos cobertos), mantém o valor bruto em vez de descartar um
+    // corte real só por isto.
+    const concelhoBrutoTexto = String(concelhoBruto);
+    concelho = ehConcelhoValido(concelhoBrutoTexto)
+      ? concelhoBrutoTexto
+      : (concelhoPorCoordenadas(geoPoint.lat, geoPoint.lon) ?? concelhoBrutoTexto);
     freguesia = freguesiaBruta ? String(freguesiaBruta) : null;
   } else if (typeof codigoPostal === "string") {
     const cacheHit = cacheGeocodificacao.get(codigoPostal);
@@ -209,6 +221,7 @@ async function prepararAlerta(
     data_inicio: dataInicio,
     data_fim: dataFim,
     descricao: descricaoPartes.join(" ") || null,
+    codigo_postal: typeof codigoPostal === "string" ? codigoPostal : null,
     origem: "oficial",
     // Explícito de propósito: sem isto, o upsert não mexia em `status` num
     // conflito, por isso uma linha que tivesse ficado "resolvido" por

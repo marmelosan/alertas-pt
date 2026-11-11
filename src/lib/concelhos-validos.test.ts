@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ehConcelhoValido, estaDentroDoConcelho } from "./concelhos-validos";
+import { concelhoPorCoordenadas, ehConcelhoValido, estaDentroDoConcelho } from "./concelhos-validos";
 
 describe("ehConcelhoValido", () => {
   it("aceita concelhos reais", () => {
@@ -41,5 +41,23 @@ describe("estaDentroDoConcelho", () => {
   it("tem margem suficiente para não rejeitar à toa perto de uma fronteira entre concelhos", () => {
     // Braga/Vila Verde, bem perto da fronteira entre os dois concelhos
     expect(estaDentroDoConcelho("Braga", 41.62, -8.3)).toBe(true);
+  });
+});
+
+describe("concelhoPorCoordenadas", () => {
+  it("resolve localidades/freguesias (não concelhos) para o concelho real a que pertencem", () => {
+    // Casos reais que a E-Redes já devolveu no campo "municipality" em vez do concelho oficial
+    expect(concelhoPorCoordenadas(38.9633, -9.4169)).toBe("Mafra"); // Ericeira
+    expect(concelhoPorCoordenadas(40.9578, -8.6283)).toBe("Ovar"); // Esmoriz
+    expect(concelhoPorCoordenadas(40.9353, -8.6381)).toBe("Ovar"); // Cortegaça
+    expect(concelhoPorCoordenadas(38.6283, -8.9142)).toBe("Palmela"); // Pinhal Novo
+  });
+
+  it("resolve um ponto no centro de um concelho para esse mesmo concelho", () => {
+    expect(concelhoPorCoordenadas(41.5503, -8.4201)).toBe("Braga");
+  });
+
+  it("devolve null para um ponto fora de todos os 308 concelhos", () => {
+    expect(concelhoPorCoordenadas(43.0, -7.55)).toBeNull(); // Lugo, Espanha
   });
 });
