@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { Alerta } from "@/types/alerta";
 
 function tempoRelativo(iso: string): string {
@@ -47,9 +48,14 @@ export function PainelAdmin({ reportesIniciais }: { reportesIniciais: Alerta[] }
         <h1 className="text-xl font-bold text-stone-900 dark:text-stone-50">
           Backoffice — últimos {reportes.length} reportes da comunidade
         </h1>
-        <button onClick={sair} className="text-sm text-stone-500 underline">
-          Sair
-        </button>
+        <div className="flex items-center gap-3">
+          <Link href="/admin/novo" className="text-sm underline">
+            + Inserir alerta oficial
+          </Link>
+          <button onClick={sair} className="text-sm text-stone-500 underline">
+            Sair
+          </button>
+        </div>
       </div>
 
       {reportes.length === 0 && <p className="text-stone-500">Sem reportes da comunidade para mostrar.</p>}
