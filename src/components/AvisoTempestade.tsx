@@ -10,7 +10,7 @@ import Link from "next/link";
  * deploy e nunca desapareceria sozinha depois da tempestade passar.
  */
 const INICIO = new Date("2026-11-10T00:00:00");
-const FIM = new Date("2026-11-12T23:59:59");
+const FIM = new Date("2026-11-11T23:59:59");
 
 export function AvisoTempestade() {
   const agora = new Date();

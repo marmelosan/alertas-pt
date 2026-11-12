@@ -6,6 +6,7 @@ import { Zap, Droplet, ShieldCheck, Users, Clock } from "lucide-react";
 import { listarAlertasAtivos, listarCortesProgramados } from "@/lib/alertas";
 import { estaPorConfirmar } from "@/lib/estado-alerta";
 import { paraSlug } from "@/lib/slug";
+import { formatarDataHora } from "@/lib/tempo";
 import type { Alerta } from "@/types/alerta";
 
 function tempoRelativo(iso: string): string {
@@ -15,6 +16,21 @@ function tempoRelativo(iso: string): string {
   const horas = Math.round(minutos / 60);
   if (horas < 24) return `há ${horas} h`;
   return `há ${Math.round(horas / 24)} d`;
+}
+
+/**
+ * A E-Redes publica cortes com semanas de antecedência — `criado_em` é
+ * quando soubemos do corte, não quando ele acontece, por isso um corte
+ * oficial de hoje podia aparecer como "há 12 d" (data real do sync, não do
+ * corte). Para oficiais mostra a janela do próprio corte; só para
+ * reportes da comunidade é que `criado_em` é mesmo "quando aconteceu".
+ */
+function quandoMostrar(alerta: Alerta): string {
+  if (alerta.origem === "oficial") {
+    if (alerta.data_fim) return `até ${formatarDataHora(alerta.data_fim)}`;
+    if (alerta.data_inicio) return `desde ${formatarDataHora(alerta.data_inicio)}`;
+  }
+  return tempoRelativo(alerta.criado_em);
 }
 
 export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?: boolean }) {
@@ -117,9 +133,7 @@ export function AlertasRecentesPainel({ mostrarTitulo = true }: { mostrarTitulo?
                   className="shrink-0 text-stone-500 dark:text-stone-400"
                   aria-label={a.origem === "oficial" ? "Oficial E-REDES" : "Comunidade"}
                 />
-                <span className="shrink-0 text-xs text-stone-500 dark:text-stone-400">
-                  {tempoRelativo(a.criado_em)}
-                </span>
+                <span className="shrink-0 text-xs text-stone-500 dark:text-stone-400">{quandoMostrar(a)}</span>
               </Link>
             </li>
           );

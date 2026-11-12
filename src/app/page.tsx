@@ -7,6 +7,15 @@ import { ResumoServidor } from "@/components/ResumoServidor";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://foiabaixo.vercel.app";
 
+// Antes do ResumoServidor a home não lia nada do Supabase no servidor, por
+// isso nunca precisou de revalidate — ficava estática desde o deploy sem
+// problema nenhum porque não havia nada que pudesse ficar desatualizado.
+// Agora há: sem isto, os números do ResumoServidor congelavam na hora do
+// build e nunca mais se mexiam, dessincronizados do mapa/painéis (esses
+// são client-side, pedem sempre dados frescos). Mesmo valor da página por
+// concelho, para o ritmo de atualização ficar igual em todo o site.
+export const revalidate = 300;
+
 const jsonLdSite = {
   "@context": "https://schema.org",
   "@type": "WebSite",
